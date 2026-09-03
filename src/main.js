@@ -22,8 +22,42 @@ async function api(body=null) {
 function me() { return state?.players?.find(p => p.id === player?.id) || null; }
 function secondsLeft() { return state?.meta?.deadline ? Math.max(0, Math.ceil((state.meta.deadline-Date.now())/1000)) : null; }
 
+function captureFocusedField() {
+  const el = document.activeElement;
+  if (!el || !["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return null;
+  const key = el.id ? `#${CSS.escape(el.id)}` : (el.name ? `[name="${CSS.escape(el.name)}"]` : null);
+  if (!key) return null;
+  return {
+    key,
+    value: "value" in el ? el.value : null,
+    selectionStart: typeof el.selectionStart === "number" ? el.selectionStart : null,
+    selectionEnd: typeof el.selectionEnd === "number" ? el.selectionEnd : null,
+  };
+}
+
+function restoreFocusedField(saved) {
+  if (!saved) return;
+  const el = document.querySelector(saved.key);
+  if (!el) return;
+  if (saved.value !== null && "value" in el) el.value = saved.value;
+  el.focus({ preventScroll: true });
+  if (saved.selectionStart !== null && typeof el.setSelectionRange === "function") {
+    try { el.setSelectionRange(saved.selectionStart, saved.selectionEnd ?? saved.selectionStart); } catch {}
+  }
+}
+
 async function refresh() {
-  try { state = await api(); error=""; render(); } catch(e) { error=e.message; render(); }
+  const focusedField = captureFocusedField();
+  try {
+    state = await api();
+    error = "";
+    render();
+    restoreFocusedField(focusedField);
+  } catch(e) {
+    error = e.message;
+    render();
+    restoreFocusedField(focusedField);
+  }
 }
 
 function rulesHtml() {
