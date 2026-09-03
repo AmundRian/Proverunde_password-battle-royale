@@ -1,0 +1,19 @@
+{
+  "name": "password-battle-royale-practice",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "dev:ui": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@upstash/redis": "^1.35.3"
+  },
+  "devDependencies": {
+    "vite": "^7.1.3",
+    "vercel": "^46.1.1"
+  }
+}
