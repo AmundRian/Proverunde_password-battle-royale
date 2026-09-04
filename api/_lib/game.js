@@ -3,17 +3,23 @@ import crypto from "node:crypto";
 
 // Practice game v2: separate namespace from both the wedding game and the old practice rules.
 // Wedding game uses pbr:* and the previous practice version used pbr-practice:v1:*.
-const PREFIX = "pbr-practice:v2:";
+const PREFIX = "pbr-practice:v3:";
 export const META_KEY = `${PREFIX}meta`;
 export const PLAYERS_KEY = `${PREFIX}players`;
 export const NAMES_KEY = `${PREFIX}names`;
+export const WINNER_KEY = `${PREFIX}winner`;
 
 export const RULES = [
   { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
   { id: "rubikColour", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
-  { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." }
+  { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
+  { id: "primeNumber", text: "Passordet ditt må inneholde minst ett primtall mellom 0 og 100." },
+  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 7 – du trenger ikke dytte Walter i runde 8, 9 eller 10. Passordet ditt må også inneholde minst én emoji." },
+  { id: "gCount", text: "Passordet ditt må avsluttes med et tall som er likt antall g-er (g/G) i passordet ditt." },
+  { id: "specialChar", text: "Passordet ditt må inneholde minst ett spesialtegn." },
+  { id: "firstWins", text: "Den første deltakeren som leverer et gyldig passord, vinner prøverunden." }
 ];
 
 // Based on the FN-sambandet country overview, plus English country names and common variants.
@@ -212,7 +218,7 @@ export async function savePlayer(redis, player) {
 }
 
 export async function resetGame(redis) {
-  await Promise.all([redis.del(META_KEY), redis.del(PLAYERS_KEY), redis.del(NAMES_KEY)]);
+  await Promise.all([redis.del(META_KEY), redis.del(PLAYERS_KEY), redis.del(NAMES_KEY), redis.del(WINNER_KEY)]);
   const meta = defaultMeta();
   await setMeta(redis, meta);
   return meta;
@@ -264,6 +270,33 @@ function hasMaxOneA(value) {
   return (matches?.length || 0) <= 1;
 }
 
+const PRIMES_UNDER_100 = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]);
+
+function containsPrimeNumber(value) {
+  const runs = String(value ?? "").match(/\d+/g) || [];
+  return runs.some(run => PRIMES_UNDER_100.has(Number(run)));
+}
+
+function containsEmoji(value) {
+  const text = String(value ?? "");
+  return /\p{Extended_Pictographic}/u.test(text) || /\p{Regional_Indicator}{2}/u.test(text) || /[0-9#*]\uFE0F?\u20E3/u.test(text);
+}
+
+function hasMatchingGCountAtEnd(value) {
+  const text = String(value ?? "");
+  const match = text.match(/(\d+)$/u);
+  if (!match) return false;
+  const gCount = (text.match(/g/gi) || []).length;
+  return Number(match[1]) === gCount;
+}
+
+// SNL explains that what counts as a special character varies by context.
+// This set uses the common examples and categories shown there, while emoji are
+// handled separately by rule 7 and therefore do not satisfy this rule alone.
+function containsSpecialCharacter(value) {
+  return /[@#$†*!?,£€¥°+−=×÷√∑¶‰…%&]/u.test(String(value ?? ""));
+}
+
 export function validatePassword(password, activeCount) {
   const p = String(password ?? "");
   const failures = [];
@@ -276,6 +309,11 @@ export function validatePassword(password, activeCount) {
       case "rubikColour": ok = containsRubikColour(p); break;
       case "primeMinister": ok = containsPrimeMinisterFirstName(p); break;
       case "maxOneA": ok = hasMaxOneA(p); break;
+      case "primeNumber": ok = containsPrimeNumber(p); break;
+      case "walterEmoji": ok = containsEmoji(p); break;
+      case "gCount": ok = hasMatchingGCountAtEnd(p); break;
+      case "specialChar": ok = containsSpecialCharacter(p); break;
+      case "firstWins": ok = true; break;
       default: ok = true;
     }
     if (!ok) failures.push(rule.text);
