@@ -11,7 +11,7 @@ export const NAMES_KEY = `${PREFIX}names`;
 export const RULES = [
   { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
-  { id: "rubikColour", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube: hvit, rød, blå, grønn, oransje eller gul. Engelske skrivemåter godkjennes også." },
+  { id: "rubikColour", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
   { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." }
 ];
