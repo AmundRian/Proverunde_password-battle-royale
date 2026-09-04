@@ -1,5 +1,5 @@
 import {
-  RULES, NAMES_KEY, assertHostKey, createId, createToken, defaultMeta,
+  RULES, NAMES_KEY, WINNER_KEY, assertHostKey, createId, createToken, defaultMeta,
   getMeta, getPlayer, getPlayers, getRedis, resetGame, savePlayer, setMeta,
   validatePassword
 } from "./_lib/game.js";
@@ -30,7 +30,9 @@ function publicState(meta, players) {
       id: p.id, name: p.name, alive: !!p.alive, hasSubmitted: !!p.submission,
       eliminatedRound: p.eliminatedRound ?? null,
       valid: reveal && p.submission ? !!p.valid : null,
-      reason: reveal ? p.reason || null : null
+      reason: reveal ? p.reason || null : null,
+      walterRound: p.walterRound ?? null,
+      walterSteps: Number(p.walterSteps || 0)
     })).sort((a,b) => Number(b.alive)-Number(a.alive) || a.name.localeCompare(b.name,"nb"))
   };
 }
@@ -83,10 +85,22 @@ export default async function handler(req, res) {
       const id = createId(), token = createToken();
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null };
+      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token }, state: publicState(meta, players) });
+    }
+
+    if (body.action === "walter_step") {
+      if (meta.status !== "round_open" || meta.round !== 7) fail("Walter-oppgaven gjelder bare i runde 7.", 409);
+      const p = await getPlayer(redis, body.playerId);
+      if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
+      if (!p.alive) fail("Du er allerede eliminert.", 409);
+      const requested = Math.max(0, Math.min(25, Math.floor(Number(body.steps) || 0)));
+      if (p.walterRound !== 7) { p.walterRound = 7; p.walterSteps = 0; }
+      p.walterSteps = Math.max(Number(p.walterSteps || 0), requested);
+      await savePlayer(redis, p);
+      return send(res, 200, { ok: true, walterSteps: p.walterSteps });
     }
 
     if (body.action === "submit") {
@@ -97,10 +111,68 @@ export default async function handler(req, res) {
       if (!p.alive) fail("Du er allerede eliminert.", 409);
       const password = String(body.password ?? "");
       if (!password) fail("Skriv inn et passord.");
+      if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+        fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
+      }
+
       p.submission = password;
       p.submittedAt = Date.now();
       p.valid = null; p.failures = []; p.reason = null;
       await savePlayer(redis, p);
+
+      // Round 10 is a race: the first player to submit a password that follows
+      // every active rule wins immediately. Invalid attempts remain spoiler-free
+      // and may be replaced until someone wins or the host closes the round.
+      if (meta.round === RULES.length) {
+        const check = validatePassword(password, meta.round);
+        if (check.valid) {
+          const claim = await redis.set(WINNER_KEY, JSON.stringify({ id: p.id, name: p.name, submittedAt: p.submittedAt, password }), { nx: true });
+          if (claim) {
+            const before = await getPlayers(redis);
+            const starters = before.filter(q => q.alive).map(q => ({ ...q }));
+            for (const q of before.filter(q => q.alive)) {
+              if (q.id === p.id) {
+                q.valid = true; q.failures = []; q.reason = null;
+              } else {
+                q.alive = false;
+                q.eliminatedRound = meta.round;
+                q.valid = false;
+                q.failures = [`${p.name} leverte et gyldig passord først.`];
+                q.reason = q.failures[0];
+              }
+              await savePlayer(redis, q);
+            }
+            const finals = await getPlayers(redis);
+            const result = buildRoundResult(meta.round, starters, finals);
+            const history = [...(meta.roundHistory || []), result];
+            meta = await setMeta(redis, {
+              ...meta,
+              status: "game_over",
+              deadline: null,
+              lastRound: result,
+              roundHistory: history,
+              winners: [p.name],
+              winnerLength: passwordLength(password)
+            });
+            return send(res, 200, { ok: true, won: true, state: publicState(meta, finals) });
+          } else {
+            // Another valid submission won the atomic race. Make sure a late
+            // overlapping request cannot accidentally overwrite the eliminated state.
+            const winnerRaw = await redis.get(WINNER_KEY);
+            const winner = typeof winnerRaw === "string" ? JSON.parse(winnerRaw) : winnerRaw;
+            const current = await getPlayer(redis, p.id);
+            if (winner?.id && current && winner.id !== current.id) {
+              current.alive = false;
+              current.eliminatedRound = meta.round;
+              current.valid = false;
+              current.failures = [`${winner.name} leverte et gyldig passord først.`];
+              current.reason = current.failures[0];
+              await savePlayer(redis, current);
+            }
+          }
+        }
+      }
+
       // Neutral response: no spoiler before the host closes the round.
       return send(res, 200, { ok: true });
     }
@@ -121,8 +193,10 @@ export default async function handler(req, res) {
       if (!alive.length) fail("Ingen spillere er igjen.", 409);
       for (const p of alive) {
         p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null;
+        if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
+      if (nextRound === RULES.length) await redis.del(WINNER_KEY);
       const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
       meta = await setMeta(redis, {
         ...meta, status: "round_open", round: nextRound, roundSeconds: seconds,
@@ -154,6 +228,9 @@ export default async function handler(req, res) {
         } else {
           const check = validatePassword(p.submission, meta.round);
           failures = [...check.failures];
+          if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 7.");
+          }
           const first = firstByPassword.get(normalizedPassword(p.submission));
           if (first && first.id !== p.id) {
             failures.push(`Samme passord: ${first.name} leverte dette passordet først.`);
@@ -174,8 +251,11 @@ export default async function handler(req, res) {
       const lastRound = meta.round >= RULES.length;
       let winners = [], winnerLength = null;
       if (lastRound && alive.length) {
-        winnerLength = Math.min(...alive.map(p => passwordLength(p.submission)));
-        winners = alive.filter(p => passwordLength(p.submission) === winnerLength).map(p => p.name);
+        const first = [...alive].sort((a,b) => (a.submittedAt || Infinity) - (b.submittedAt || Infinity))[0];
+        if (first) {
+          winners = [first.name];
+          winnerLength = passwordLength(first.submission);
+        }
       }
       meta = await setMeta(redis, {
         ...meta, status: lastRound ? "game_over" : "results", deadline: null,
