@@ -219,3 +219,112 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .length { grid-column: 2; }
   .copy-btn { grid-column: 3; grid-row: 2; }
 }
+
+/* Runde 7: Walter-løype. Denne komponenten finnes kun mens runde 7 er åpen. */
+.walter-challenge {
+  margin: 2px 0 4px;
+  padding: 12px;
+  border: 1px solid #3b4260;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(22,27,45,.96), rgba(12,15,25,.96));
+  overflow: hidden;
+}
+.walter-challenge.done { border-color: #4d8d63; background: linear-gradient(145deg, rgba(18,48,31,.95), rgba(12,24,20,.95)); }
+.walter-copy {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.walter-copy strong { font-size: .9rem; }
+.walter-copy span { color: #aeb5ca; font-size: .78rem; font-weight: 800; white-space: nowrap; }
+.walter-track {
+  position: relative;
+  height: 112px;
+  margin: 4px 0 8px;
+  border-radius: 14px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 calc(4% - 1px), rgba(255,255,255,.26) calc(4% - 1px) 4%),
+    linear-gradient(90deg, #ff5b5b 0 16.6%, #ffb43f 16.6% 33.2%, #ffe45f 33.2% 49.8%, #5be08b 49.8% 66.4%, #56b9ff 66.4% 83%, #a477ff 83% 100%);
+  border: 2px solid rgba(255,255,255,.18);
+  box-shadow: inset 0 0 0 4px rgba(8,10,18,.28);
+}
+.walter-track::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 66%;
+  height: 4px;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,.72);
+  box-shadow: 0 2px 0 rgba(0,0,0,.28);
+}
+.walter-finish {
+  position: absolute;
+  z-index: 2;
+  left: 88%;
+  top: 5px;
+  bottom: 5px;
+  width: 14px;
+  border: 2px solid #fff;
+  background: conic-gradient(#111 25%, #fff 0 50%, #111 0 75%, #fff 0) 0 0 / 10px 10px;
+  box-shadow: 0 0 0 2px rgba(0,0,0,.35);
+}
+.walter-dog {
+  position: absolute;
+  z-index: 4;
+  bottom: 8px;
+  width: 72px;
+  height: 94px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  transform: translateX(-50%);
+  transition: left .16s ease-out;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.walter-dog:hover { filter: none; }
+.walter-dog:disabled { opacity: 1; cursor: default; }
+.walter-dog img {
+  display: block;
+  width: auto;
+  height: 92px;
+  max-width: 70px;
+  margin: 0 auto;
+  object-fit: contain;
+  user-select: none;
+  filter: drop-shadow(0 6px 7px rgba(0,0,0,.38));
+  transform-origin: 50% 100%;
+}
+.walter-dog img.walter-hop { animation: walter-practice-hop .38s cubic-bezier(.2,.75,.28,1); }
+@keyframes walter-practice-hop {
+  0% { transform: translateY(0) scale(1); }
+  45% { transform: translateY(-17px) scale(1.04); }
+  100% { transform: translateY(0) scale(1); }
+}
+.walter-message {
+  min-height: 1.2em;
+  color: #aeb5ca;
+  font-size: .78rem;
+  text-align: center;
+}
+.walter-challenge.done .walter-message { color: #aaf1bd; font-weight: 800; }
+
+@media (max-width: 520px) {
+  .walter-challenge { padding: 10px; }
+  .walter-copy { align-items: flex-start; }
+  .walter-copy strong { max-width: 62%; }
+  .walter-track { height: 104px; }
+  .walter-dog { width: 64px; height: 88px; }
+  .walter-dog img { height: 84px; max-width: 62px; }
+  .walter-message { font-size: .74rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .walter-dog { transition: none; }
+  .walter-dog img.walter-hop { animation: none; }
+}
