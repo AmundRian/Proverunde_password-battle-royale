@@ -1,4 +1,5 @@
 import "./style.css";
+import walterImage from "./walter.png";
 
 const app = document.querySelector("#app");
 const hostMode = new URLSearchParams(location.search).get("host") === "1";
@@ -11,6 +12,7 @@ let copiedPassword = localStorage.getItem("pbrPracticeCopiedPassword") || "";
 let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
+let walterSyncPromise = Promise.resolve();
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({
@@ -50,6 +52,69 @@ function secondsLeft() {
   return state?.meta?.deadline
     ? Math.max(0, Math.ceil((state.meta.deadline - Date.now()) / 1000))
     : null;
+}
+
+function walterStorageKey() {
+  return player?.id ? `pbrPracticeWalter:${player.id}:7` : "";
+}
+
+function walterSteps() {
+  const self = me();
+  const server = self?.walterRound === 7 ? Number(self?.walterSteps || 0) : 0;
+  const key = walterStorageKey();
+  const local = key ? Number(localStorage.getItem(key) || 0) : 0;
+  return Math.max(0, Math.min(25, Math.max(server, local)));
+}
+
+function setWalterLocalSteps(steps) {
+  const key = walterStorageKey();
+  if (key) localStorage.setItem(key, String(Math.max(0, Math.min(25, Number(steps) || 0))));
+}
+
+function walterHtml() {
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 7 || !me()?.alive) return "";
+  const steps = walterSteps();
+  const left = 5 + (steps / 25) * 89;
+  const done = steps >= 25;
+  return `<div class="walter-challenge ${done ? "done" : ""}">
+    <div class="walter-copy">
+      <strong>${done ? "Walter er over målstreken! 🏁" : "Dytt Walter over målstreken"}</strong>
+      <span id="walter-count">${steps} / 25 trykk</span>
+    </div>
+    <div class="walter-track" aria-label="Walter-bane med 25 intervaller">
+      <div class="walter-finish" aria-hidden="true"></div>
+      <button id="walter-button" class="walter-dog" type="button" style="left:${left}%" ${done ? "disabled" : ""} aria-label="Dytt Walter ett steg frem">
+        <img id="walter-image" src="${walterImage}" alt="Walter" draggable="false">
+      </button>
+    </div>
+    <div id="walter-message" class="walter-message">${done ? "✓ Nå kan du levere passordet ditt." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg."}</div>
+  </div>`;
+}
+
+function updateWalterDom(steps, animate = true) {
+  const safe = Math.max(0, Math.min(25, Number(steps) || 0));
+  setWalterLocalSteps(safe);
+  const left = 5 + (safe / 25) * 89;
+  const button = document.querySelector("#walter-button");
+  const image = document.querySelector("#walter-image");
+  const count = document.querySelector("#walter-count");
+  const message = document.querySelector("#walter-message");
+  const challenge = document.querySelector(".walter-challenge");
+  if (button) {
+    button.style.left = `${left}%`;
+    button.disabled = safe >= 25;
+  }
+  if (count) count.textContent = `${safe} / 25 trykk`;
+  if (message) message.textContent = safe >= 25 ? "✓ Nå kan du levere passordet ditt." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
+  if (challenge) challenge.classList.toggle("done", safe >= 25);
+  const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
+  if (submitButton && state?.meta?.round === 7) submitButton.disabled = safe < 25 || secondsLeft() === 0;
+  if (animate && image) {
+    image.classList.remove("walter-hop");
+    void image.offsetWidth;
+    image.classList.add("walter-hop");
+    setTimeout(() => image.classList.remove("walter-hop"), 420);
+  }
 }
 
 /*
@@ -193,6 +258,7 @@ function playerView() {
 
   if (state.meta.status === "round_open" && self.alive) {
     const starter = copiedPassword || lastOwnPassword || "";
+    const walterDone = state.meta.round !== 7 || walterSteps() >= 25;
     return `<section class="card accent play-card">
       <div class="submit-head">
         <h2>Submit your password</h2>
@@ -210,7 +276,8 @@ function playerView() {
             required
             placeholder="Bygg et passord som følger alle reglene">
         </label>
-        <button ${secondsLeft() === 0 ? "disabled" : ""}>Submit / replace</button>
+        ${walterHtml()}
+        <button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Submit / replace</button>
       </form>
       ${self.hasSubmitted ? `<div class="feedback good">✓ Passordet er lagret. Resultatet vises når runden avsluttes.</div>` : ""}
       <p class="muted tiny">Passordet fra forrige runde er forhåndsutfylt. Du kan endre og sende inn på nytt helt til tiden går ut.</p>
@@ -233,7 +300,7 @@ function playerView() {
     return `<section class="card winner finish">
       <h2>Prøverunden er over 🎉</h2>
       <p>Nå kjenner du flyten: skriv → send → vent → se resultat → eventuelt kopier.</p>
-      ${state.meta.winners?.length ? `<div class="winner-box">Korteste sluttpassord: <b>${esc(state.meta.winners.join(" & "))}</b> (${state.meta.winnerLength} tegn)</div>` : ""}
+      ${state.meta.winners?.length ? `<div class="winner-box">Vinner av prøverunden: <b>${esc(state.meta.winners.join(" & "))}</b> 🎉</div>` : ""}
     </section>`;
   }
 
@@ -361,17 +428,39 @@ function bind() {
     e.preventDefault();
     const password = String(new FormData(e.currentTarget).get("password") || "");
     try {
-      await api({ action: "submit", playerId: player.id, token: player.token, password });
+      if (state?.meta?.round === 7) {
+        if (walterSteps() < 25) throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
+        await walterSyncPromise;
+        await api({ action: "walter_step", playerId: player.id, token: player.token, steps: 25 });
+      }
+      const response = await api({ action: "submit", playerId: player.id, token: player.token, password });
       lastOwnPassword = password;
       copiedPassword = "";
       localStorage.setItem("pbrPracticeLastPassword", password);
       localStorage.removeItem("pbrPracticeCopiedPassword");
       error = "";
+      if (response?.state) state = response.state;
       await refresh();
     } catch (x) {
       error = x.message;
       render();
     }
+  });
+
+  document.querySelector("#walter-button")?.addEventListener("click", () => {
+    const current = walterSteps();
+    if (current >= 25) return;
+    const next = current + 1;
+    updateWalterDom(next, true);
+    walterSyncPromise = walterSyncPromise
+      .catch(() => {})
+      .then(() => api({ action: "walter_step", playerId: player.id, token: player.token, steps: next }))
+      .then(data => {
+        if (data?.walterSteps != null && Number(data.walterSteps) > walterSteps()) updateWalterDom(Number(data.walterSteps), false);
+      })
+      .catch(err => {
+        error = `Walter kunne ikke synkroniseres akkurat nå: ${err.message}`;
+      });
   });
 
   document.querySelector("#start-round")?.addEventListener("click", async () => {
@@ -404,6 +493,7 @@ function bind() {
       localStorage.removeItem("pbrPracticePlayer");
       localStorage.removeItem("pbrPracticeLastPassword");
       localStorage.removeItem("pbrPracticeCopiedPassword");
+      if (walterStorageKey()) localStorage.removeItem(walterStorageKey());
       player = null;
       lastOwnPassword = "";
       copiedPassword = "";
@@ -428,7 +518,11 @@ function tick() {
   const headerTimer = document.querySelector("#header-countdown");
   if (timer) timer.textContent = `${s ?? 0}s`;
   if (headerTimer) headerTimer.textContent = `${s ?? 0}s igjen`;
-  if (s === 0) document.querySelector("#submit-form button")?.setAttribute("disabled", "");
+  const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
+  if (submitButton) {
+    if (s === 0) submitButton.setAttribute("disabled", "");
+    else if (state?.meta?.round === 7) submitButton.disabled = walterSteps() < 25;
+  }
 }
 
 setInterval(refresh, 2000);
