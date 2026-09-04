@@ -12,7 +12,6 @@ let copiedPassword = localStorage.getItem("pbrPracticeCopiedPassword") || "";
 let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
-let walterSyncPromise = Promise.resolve();
 
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({
@@ -87,7 +86,7 @@ function walterHtml() {
         <img id="walter-image" src="${walterImage}" alt="Walter" draggable="false">
       </button>
     </div>
-    <div id="walter-message" class="walter-message">${done ? "✓ Nå kan du levere passordet ditt." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg."}</div>
+    <div id="walter-message" class="walter-message">${done ? "✓ Walter er i mål! Nå kan du endre passordet ditt, legge til en emoji og deretter levere." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg."}</div>
   </div>`;
 }
 
@@ -105,7 +104,7 @@ function updateWalterDom(steps, animate = true) {
     button.disabled = safe >= 25;
   }
   if (count) count.textContent = `${safe} / 25 trykk`;
-  if (message) message.textContent = safe >= 25 ? "✓ Nå kan du levere passordet ditt." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
+  if (message) message.textContent = safe >= 25 ? "✓ Walter er i mål! Nå kan du endre passordet ditt, legge til en emoji og deretter levere." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
   if (challenge) challenge.classList.toggle("done", safe >= 25);
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
   if (submitButton && state?.meta?.round === 7) submitButton.disabled = safe < 25 || secondsLeft() === 0;
@@ -267,6 +266,7 @@ function playerView() {
       <form id="submit-form">
         <label>Password
           <input
+            id="password-input"
             class="password-input"
             name="password"
             maxlength="200"
@@ -428,12 +428,18 @@ function bind() {
     e.preventDefault();
     const password = String(new FormData(e.currentTarget).get("password") || "");
     try {
-      if (state?.meta?.round === 7) {
-        if (walterSteps() < 25) throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
-        await walterSyncPromise;
-        await api({ action: "walter_step", playerId: player.id, token: player.token, steps: 25 });
+      const round7 = state?.meta?.round === 7;
+      const completedWalterSteps = round7 ? walterSteps() : 0;
+      if (round7 && completedWalterSteps < 25) {
+        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
       }
-      const response = await api({ action: "submit", playerId: player.id, token: player.token, password });
+      const response = await api({
+        action: "submit",
+        playerId: player.id,
+        token: player.token,
+        password,
+        ...(round7 ? { walterSteps: completedWalterSteps } : {})
+      });
       lastOwnPassword = password;
       copiedPassword = "";
       localStorage.setItem("pbrPracticeLastPassword", password);
@@ -452,15 +458,33 @@ function bind() {
     if (current >= 25) return;
     const next = current + 1;
     updateWalterDom(next, true);
-    walterSyncPromise = walterSyncPromise
-      .catch(() => {})
-      .then(() => api({ action: "walter_step", playerId: player.id, token: player.token, steps: next }))
-      .then(data => {
-        if (data?.walterSteps != null && Number(data.walterSteps) > walterSteps()) updateWalterDom(Number(data.walterSteps), false);
-      })
-      .catch(err => {
-        error = `Walter kunne ikke synkroniseres akkurat nå: ${err.message}`;
-      });
+
+    // Vi sender ikke lenger 25 nettverkskall etter hverandre.
+    // Når Walter når målstreken synkroniseres 25/25 én gang.
+    // Selve Submit sender også 25/25 atomisk sammen med passordet.
+    if (next >= 25) {
+      // Når Walter er i mål skal deltakeren få en tydelig mulighet til å
+      // redigere passordet igjen (for eksempel legge til emoji) før levering.
+      setTimeout(() => {
+        const passwordInput = document.querySelector("#password-input");
+        if (passwordInput) {
+          passwordInput.scrollIntoView({ behavior: "smooth", block: "center" });
+          try {
+            passwordInput.focus({ preventScroll: true });
+            const end = passwordInput.value.length;
+            passwordInput.setSelectionRange(end, end);
+          } catch {}
+        }
+      }, 450);
+
+      api({ action: "walter_step", playerId: player.id, token: player.token, steps: 25 })
+        .then(data => {
+          if (data?.walterSteps != null) updateWalterDom(Number(data.walterSteps), false);
+        })
+        .catch(() => {
+          // Ikke blokker brukeren her: Submit sender Walter-status på nytt.
+        });
+    }
   });
 
   document.querySelector("#start-round")?.addEventListener("click", async () => {
