@@ -1,5 +1,5 @@
 import {
-  RULES, NAMES_KEY, WINNER_KEY, assertHostKey, createId, createToken, defaultMeta,
+  RULES, NAMES_KEY, WINNER_KEY, VOTES_KEY, assertHostKey, createId, createToken, defaultMeta,
   getMeta, getPlayer, getPlayers, getRedis, resetGame, savePlayer, setMeta,
   validatePassword
 } from "./_lib/game.js";
@@ -32,7 +32,8 @@ function publicState(meta, players) {
       valid: reveal && p.submission ? !!p.valid : null,
       reason: reveal ? p.reason || null : null,
       walterRound: p.walterRound ?? null,
-      walterSteps: Number(p.walterSteps || 0)
+      walterSteps: Number(p.walterSteps || 0),
+      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2
     })).sort((a,b) => Number(b.alive)-Number(a.alive) || a.name.localeCompare(b.name,"nb"))
   };
 }
@@ -44,11 +45,12 @@ function buildRoundResult(round, starters, finals) {
     return {
       id: p.id, name: p.name, password: p.submission || null,
       passwordLength: passwordLength(p.submission), submitted: !!p.submission,
-      survived: !!p.alive, reason: p.reason || null, failures: p.failures || [],
-      submittedAt: p.submittedAt || null
+      survived: !!p.alive, valid: !!p.valid, reason: p.reason || null, failures: p.failures || [],
+      submittedAt: p.submittedAt || null, lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : null
     };
   }).sort((a,b) => {
     if (a.survived !== b.survived) return Number(b.survived)-Number(a.survived);
+    if (a.valid !== b.valid) return Number(b.valid)-Number(a.valid);
     if (a.submitted !== b.submitted) return Number(b.submitted)-Number(a.submitted);
     return (a.passwordLength ?? 9999) - (b.passwordLength ?? 9999) || (a.submittedAt ?? 0)-(b.submittedAt ?? 0);
   });
@@ -85,22 +87,35 @@ export default async function handler(req, res) {
       const id = createId(), token = createToken();
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null };
+      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token }, state: publicState(meta, players) });
     }
 
     if (body.action === "walter_step") {
-      if (meta.status !== "round_open" || meta.round !== 7) fail("Walter-oppgaven gjelder bare i runde 7.", 409);
+      if (meta.status !== "round_open" || meta.round !== 8) fail("Walter-oppgaven gjelder bare i runde 8.", 409);
       const p = await getPlayer(redis, body.playerId);
       if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
       if (!p.alive) fail("Du er allerede eliminert.", 409);
       const requested = Math.max(0, Math.min(25, Math.floor(Number(body.steps) || 0)));
-      if (p.walterRound !== 7) { p.walterRound = 7; p.walterSteps = 0; }
+      if (p.walterRound !== 8) { p.walterRound = 8; p.walterSteps = 0; }
       p.walterSteps = Math.max(Number(p.walterSteps || 0), requested);
       await savePlayer(redis, p);
       return send(res, 200, { ok: true, walterSteps: p.walterSteps });
+    }
+
+    if (body.action === "vote") {
+      if (meta.status !== "round_open" || meta.round !== 4) fail("Avstemningen gjelder bare i runde 4.", 409);
+      const voter = await getPlayer(redis, body.playerId);
+      if (!voter || voter.token !== body.token) fail("Ugyldig spiller.", 401);
+      if (!voter.alive) fail("Du er allerede eliminert.", 409);
+      const targetId = String(body.targetId || "");
+      const target = await getPlayer(redis, targetId);
+      if (!target || !target.alive) fail("Denne deltakeren kan ikke stemmes på.", 409);
+      if (target.id === voter.id) fail("Du kan ikke stemme på deg selv.", 409);
+      await redis.hset(VOTES_KEY, { [voter.id]: target.id });
+      return send(res, 200, { ok: true, targetId: target.id, targetName: target.name });
     }
 
     if (body.action === "submit") {
@@ -114,24 +129,24 @@ export default async function handler(req, res) {
 
       // Runde 7: Walter-status sendes sammen med selve innleveringen.
       // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
-      if (meta.round === 7) {
+      if (meta.round === 8) {
         const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
         if (submittedWalterSteps >= 25) {
-          p.walterRound = 7;
+          p.walterRound = 8;
           p.walterSteps = 25;
         }
         if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
-          fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
+          fail("Du må dytte Walter over målstreken før du kan levere i runde 8.", 409);
         }
       }
 
       // Runde 9: egg-tiden sendes sammen med passordet. Vi avslører ikke
       // om tiden var riktig før runden avsluttes. Spilleren kan prøve på nytt
       // og erstatte innleveringen så lenge runden er åpen.
-      if (meta.round === 9) {
+      if (meta.round === 10) {
         const eggSeconds = Number(body.eggSeconds);
         if (!Number.isFinite(eggSeconds) || eggSeconds < 0 || eggSeconds > 60) {
-          fail("Du må koke egget og stoppe timeren før du kan levere i runde 9.", 409);
+          fail("Du må koke egget og stoppe timeren før du kan levere i runde 10.", 409);
         }
         p.eggSeconds = Math.round(eggSeconds * 100) / 100;
       }
@@ -212,9 +227,14 @@ export default async function handler(req, res) {
       const players = await getPlayers(redis);
       const alive = players.filter(p => p.alive);
       if (!alive.length) fail("Ingen spillere er igjen.", 409);
+      if (nextRound === 4) await redis.del(VOTES_KEY);
       for (const p of alive) {
         p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
-        if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
+        // Runde 1–3 er treningsrunder med to liv. Fra runde 4 går alle
+        // gjenværende spillere over til sudden death med ett liv.
+        if (nextRound === 1 && !Number.isFinite(Number(p.lives))) p.lives = 2;
+        if (nextRound === 4) p.lives = 1;
+        if (nextRound === 8) { p.walterRound = 8; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
       if (nextRound === RULES.length) await redis.del(WINNER_KEY);
@@ -231,6 +251,8 @@ export default async function handler(req, res) {
       const players = await getPlayers(redis);
       const starters = players.filter(p => p.alive).map(p => ({...p}));
       const active = players.filter(p => p.alive);
+      const votesRaw = meta.round === 4 ? (await redis.hgetall(VOTES_KEY) || {}) : {};
+      const votes = Object.fromEntries(Object.entries(votesRaw).map(([voterId, target]) => [voterId, String(target)]));
 
       // Determine the first submitter for each complete password (case-insensitive).
       const ordered = active.filter(p => p.submission).sort((a,b) => (a.submittedAt||0)-(b.submittedAt||0));
@@ -249,10 +271,13 @@ export default async function handler(req, res) {
         } else {
           const check = validatePassword(p.submission, meta.round);
           failures = [...check.failures];
-          if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
-            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 7.");
+          if (meta.round === 4 && !votes[p.id]) {
+            failures.push("Du avga ikke en stemme på en annen deltaker i runde 4.");
           }
-          if (meta.round === 9) {
+          if (meta.round === 8 && !(p.walterRound === 8 && Number(p.walterSteps || 0) >= 25)) {
+            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 8.");
+          }
+          if (meta.round === 10) {
             const eggSeconds = Number(p.eggSeconds);
             if (!Number.isFinite(eggSeconds) || eggSeconds < 6 || eggSeconds > 8) {
               failures.push("Egget ble ikke stoppet innenfor riktig tidsvindu for et smilende egg.");
@@ -264,11 +289,85 @@ export default async function handler(req, res) {
           }
           reason = failures[0] || null;
         }
+
         p.valid = failures.length === 0;
         p.failures = failures;
         p.reason = reason;
-        if (!p.valid) { p.alive = false; p.eliminatedRound = meta.round; }
+
+        if (!p.valid) {
+          if (meta.round <= 3) {
+            const currentLives = Math.max(1, Number(p.lives || 2));
+            p.lives = currentLives - 1;
+            if (p.lives <= 0) {
+              p.alive = false;
+              p.eliminatedRound = meta.round;
+              p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ditt siste liv.`;
+            } else {
+              p.alive = true;
+              p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ett liv, men er fortsatt med.`;
+            }
+          } else {
+            p.lives = 0;
+            p.alive = false;
+            p.eliminatedRound = meta.round;
+          }
+        }
         await savePlayer(redis, p);
+      }
+
+      // Runde 4: passordene vurderes først. Deretter elimineres de to høyest
+      // stemte blant spillerne som ellers ville gått videre. Stemmer på spillere
+      // som allerede røk på passordkravet teller derfor ikke i utslagsdelen.
+      if (meta.round === 4) {
+        const afterPassword = await getPlayers(redis);
+        const eligible = afterPassword.filter(p => p.alive);
+        const eligibleIds = new Set(eligible.map(p => p.id));
+        const starterById = new Map(starters.map(p => [p.id, p]));
+        const voteDetails = new Map(eligible.map(p => [p.id, []]));
+        for (const [voterId, targetId] of Object.entries(votes)) {
+          if (!eligibleIds.has(targetId)) continue;
+          const voter = starterById.get(voterId);
+          if (!voter) continue;
+          voteDetails.get(targetId)?.push(voter.name);
+        }
+
+        const scored = eligible
+          .map(p => ({ p, voters: voteDetails.get(p.id) || [] }))
+          .sort((a,b) => b.voters.length - a.voters.length || a.p.name.localeCompare(b.p.name, "nb"));
+
+        // Opptil to elimineres, og med minst to kvalifiserte spillere blir det
+        // alltid to. Ved stemmelikhet på grensen trekkes tilfeldig mellom de som
+        // står likt, slik at avstemningen fortsatt får nøyaktig to plasser.
+        const chosen = [];
+        let i = 0;
+        while (chosen.length < 2 && i < scored.length) {
+          const count = scored[i].voters.length;
+          const tied = [];
+          while (i < scored.length && scored[i].voters.length === count) tied.push(scored[i++]);
+          const remainingSlots = 2 - chosen.length;
+          if (tied.length <= remainingSlots) {
+            chosen.push(...tied);
+          } else {
+            const pool = [...tied];
+            while (chosen.length < 2 && pool.length) {
+              const pick = Math.floor(Math.random() * pool.length);
+              chosen.push(pool.splice(pick, 1)[0]);
+            }
+          }
+        }
+
+        for (const entry of chosen) {
+          const p = entry.p;
+          p.alive = false;
+          p.lives = 0;
+          p.eliminatedRound = 4;
+          p.valid = false;
+          p.failures = [...(p.failures || []), `Stemmet ut med ${entry.voters.length} stemme${entry.voters.length === 1 ? "" : "r"}.`];
+          p.reason = entry.voters.length
+            ? `Stemmet ut med ${entry.voters.length} stemme${entry.voters.length === 1 ? "" : "r"}: ${entry.voters.join(", ")}.`
+            : "Stemmet ut etter stemmelikhet med 0 stemmer. Ingen stemte direkte på deg.";
+          await savePlayer(redis, p);
+        }
       }
 
       const finals = await getPlayers(redis);
