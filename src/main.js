@@ -184,9 +184,21 @@ function lifeHtml(self) {
   const lives = Math.max(0, Number(self.lives ?? (round <= 3 ? 2 : 1)));
   if (round <= 3) {
     const icons = lives >= 2 ? "❤️ ❤️" : lives === 1 ? "❤️ 🖤" : "🖤 🖤";
-    return `<div class="life-banner training-life"><strong>${icons}</strong><div><b>Treningsliv</b><span>Du har to liv i de tre første rundene. Feil koster ett liv.</span></div></div>`;
+    return `<div class="life-banner training-life">
+      <strong class="life-icons">${icons}</strong>
+      <div class="life-copy">
+        <div class="life-title">Treningsliv</div>
+        <div class="life-description">Du har to liv i de tre første rundene. Feil koster ett liv.</div>
+      </div>
+    </div>`;
   }
-  return `<div class="life-banner sudden-life"><strong>❤️</strong><div><b>Ett liv fra runde 4</b><span>Fra nå av er du ute hvis du ikke oppfyller rundens krav.</span></div></div>`;
+  return `<div class="life-banner sudden-life">
+    <strong class="life-icons">❤️</strong>
+    <div class="life-copy">
+      <div class="life-title">Ett liv fra runde 4</div>
+      <div class="life-description">Fra nå av er du ute hvis du ikke oppfyller rundens krav.</div>
+    </div>
+  </div>`;
 }
 
 function voteHtml() {
