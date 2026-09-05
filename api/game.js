@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       const id = createId(), token = createToken();
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0 };
+      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token }, state: publicState(meta, players) });
@@ -111,8 +111,29 @@ export default async function handler(req, res) {
       if (!p.alive) fail("Du er allerede eliminert.", 409);
       const password = String(body.password ?? "");
       if (!password) fail("Skriv inn et passord.");
-      if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
-        fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
+
+      // Runde 7: Walter-status sendes sammen med selve innleveringen.
+      // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
+      if (meta.round === 7) {
+        const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
+        if (submittedWalterSteps >= 25) {
+          p.walterRound = 7;
+          p.walterSteps = 25;
+        }
+        if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+          fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
+        }
+      }
+
+      // Runde 9: egg-tiden sendes sammen med passordet. Vi avslører ikke
+      // om tiden var riktig før runden avsluttes. Spilleren kan prøve på nytt
+      // og erstatte innleveringen så lenge runden er åpen.
+      if (meta.round === 9) {
+        const eggSeconds = Number(body.eggSeconds);
+        if (!Number.isFinite(eggSeconds) || eggSeconds < 0 || eggSeconds > 60) {
+          fail("Du må koke egget og stoppe timeren før du kan levere i runde 9.", 409);
+        }
+        p.eggSeconds = Math.round(eggSeconds * 100) / 100;
       }
 
       p.submission = password;
@@ -192,7 +213,7 @@ export default async function handler(req, res) {
       const alive = players.filter(p => p.alive);
       if (!alive.length) fail("Ingen spillere er igjen.", 409);
       for (const p of alive) {
-        p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null;
+        p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
         if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
@@ -230,6 +251,12 @@ export default async function handler(req, res) {
           failures = [...check.failures];
           if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
             failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 7.");
+          }
+          if (meta.round === 9) {
+            const eggSeconds = Number(p.eggSeconds);
+            if (!Number.isFinite(eggSeconds) || eggSeconds < 6 || eggSeconds > 8) {
+              failures.push("Egget ble ikke stoppet innenfor riktig tidsvindu for et smilende egg.");
+            }
           }
           const first = firstByPassword.get(normalizedPassword(p.submission));
           if (first && first.id !== p.id) {
