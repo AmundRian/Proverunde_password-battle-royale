@@ -127,7 +127,7 @@ export default async function handler(req, res) {
       const password = String(body.password ?? "");
       if (!password) fail("Skriv inn et passord.");
 
-      // Runde 7: Walter-status sendes sammen med selve innleveringen.
+      // Runde 8: Walter-status sendes sammen med selve innleveringen.
       // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
       if (meta.round === 8) {
         const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
@@ -135,12 +135,12 @@ export default async function handler(req, res) {
           p.walterRound = 8;
           p.walterSteps = 25;
         }
-        if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+        if (!(p.walterRound === 8 && Number(p.walterSteps || 0) >= 25)) {
           fail("Du må dytte Walter over målstreken før du kan levere i runde 8.", 409);
         }
       }
 
-      // Runde 9: egg-tiden sendes sammen med passordet. Vi avslører ikke
+      // Runde 10: egg-tiden sendes sammen med passordet. Vi avslører ikke
       // om tiden var riktig før runden avsluttes. Spilleren kan prøve på nytt
       // og erstatte innleveringen så lenge runden er åpen.
       if (meta.round === 10) {
