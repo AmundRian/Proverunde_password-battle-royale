@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 
 // Practice game v2: separate namespace from both the wedding game and the old practice rules.
 // Wedding game uses pbr:* and the previous practice version used pbr-practice:v1:*.
-const PREFIX = "pbr-practice:v3:";
+const PREFIX = "pbr-practice:v4:";
 export const META_KEY = `${PREFIX}meta`;
 export const PLAYERS_KEY = `${PREFIX}players`;
 export const NAMES_KEY = `${PREFIX}names`;
@@ -12,13 +12,13 @@ export const WINNER_KEY = `${PREFIX}winner`;
 export const RULES = [
   { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
-  { id: "rubikColour", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube." },
+  { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
   { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
   { id: "primeNumber", text: "Passordet ditt må inneholde minst ett primtall mellom 0 og 100." },
-  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 7 – du trenger ikke dytte Walter i runde 8, 9 eller 10. Passordet ditt må også inneholde minst én emoji." },
+  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 7 – du trenger ikke dytte Walter i runde 8, 9 eller 10. Passordet ditt må også inneholde minst tre emojier." },
   { id: "gCount", text: "Passordet ditt må avsluttes med et tall som er likt antall g-er (g/G) i passordet ditt." },
-  { id: "specialChar", text: "Passordet ditt må inneholde minst ett spesialtegn." },
+  { id: "eggTimer", text: "Før du får levere passordet ditt må du koke ett egg. Dra egget ned i kjelen. Ett sekund tilsvarer ett minutt. Stopp når du mener egget er smilende." },
   { id: "firstWins", text: "Den første deltakeren som leverer et gyldig passord, vinner prøverunden." }
 ];
 
@@ -260,6 +260,21 @@ function containsRubikColour(value) {
   return colours.some(colour => normalized.includes(colour));
 }
 
+function containsDeadlySin(value) {
+  const normalized = normalizeForMatch(value);
+  // Sju dødssynder. Fasiten vises ikke i spillergrensesnittet.
+  const sins = [
+    "hovmod", "pride",
+    "grådighet", "gradighet", "greed", "avarice",
+    "utukt", "lust",
+    "misunnelse", "envy",
+    "fråtseri", "fratseri", "gluttony",
+    "vrede", "wrath",
+    "latskap", "sloth"
+  ].map(normalizeForMatch);
+  return sins.some(sin => normalized.includes(sin));
+}
+
 function containsPrimeMinisterFirstName(value) {
   const normalized = normalizeForMatch(value);
   return PRIME_MINISTER_KEYS.some(name => normalized.includes(name));
@@ -277,9 +292,21 @@ function containsPrimeNumber(value) {
   return runs.some(run => PRIMES_UNDER_100.has(Number(run)));
 }
 
-function containsEmoji(value) {
+function countEmojis(value) {
   const text = String(value ?? "");
-  return /\p{Extended_Pictographic}/u.test(text) || /\p{Regional_Indicator}{2}/u.test(text) || /[0-9#*]\uFE0F?\u20E3/u.test(text);
+  // Count visible emoji grapheme clusters, so a family/ZWJ emoji counts as one.
+  const segmenter = new Intl.Segmenter("nb", { granularity: "grapheme" });
+  let count = 0;
+  for (const { segment } of segmenter.segment(text)) {
+    if (/\p{Extended_Pictographic}/u.test(segment) || /\p{Regional_Indicator}{2}/u.test(segment) || /[0-9#*]\uFE0F?\u20E3/u.test(segment)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function containsAtLeastThreeEmojis(value) {
+  return countEmojis(value) >= 3;
 }
 
 function hasMatchingGCountAtEnd(value) {
@@ -290,12 +317,7 @@ function hasMatchingGCountAtEnd(value) {
   return Number(match[1]) === gCount;
 }
 
-// SNL explains that what counts as a special character varies by context.
-// This set uses the common examples and categories shown there, while emoji are
-// handled separately by rule 7 and therefore do not satisfy this rule alone.
-function containsSpecialCharacter(value) {
-  return /[@#$†*!?,£€¥°+−=×÷√∑¶‰…%&]/u.test(String(value ?? ""));
-}
+// Runde 9 valideres server-side via egg-tiden, ikke via selve passordteksten.
 
 export function validatePassword(password, activeCount) {
   const p = String(password ?? "");
@@ -306,13 +328,13 @@ export function validatePassword(password, activeCount) {
     switch (rule.id) {
       case "country": ok = containsCountry(p); break;
       case "upper2number": ok = hasTwoUppercaseAndNumber(p); break;
-      case "rubikColour": ok = containsRubikColour(p); break;
+      case "rubikColourDeadlySin": ok = containsRubikColour(p) && containsDeadlySin(p); break;
       case "primeMinister": ok = containsPrimeMinisterFirstName(p); break;
       case "maxOneA": ok = hasMaxOneA(p); break;
       case "primeNumber": ok = containsPrimeNumber(p); break;
-      case "walterEmoji": ok = containsEmoji(p); break;
+      case "walterEmoji": ok = containsAtLeastThreeEmojis(p); break;
       case "gCount": ok = hasMatchingGCountAtEnd(p); break;
-      case "specialChar": ok = containsSpecialCharacter(p); break;
+      case "eggTimer": ok = true; break;
       case "firstWins": ok = true; break;
       default: ok = true;
     }
