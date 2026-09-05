@@ -178,6 +178,9 @@ export function getRedis() {
 
 export function defaultMeta() {
   return {
+    // A fresh sessionId is created for every full host reset. The browser uses
+    // this to know when locally cached passwords/progress belong to an old game.
+    sessionId: crypto.randomBytes(12).toString("hex"),
     status: "lobby",
     round: 0,
     roundSeconds: 60,
@@ -191,7 +194,19 @@ export function defaultMeta() {
 }
 
 export async function getMeta(redis) {
-  return (await redis.get(META_KEY)) || defaultMeta();
+  let meta = await redis.get(META_KEY);
+  if (!meta) {
+    meta = defaultMeta();
+    await redis.set(META_KEY, meta);
+    return meta;
+  }
+
+  // One-time migration for a live v4 game created before sessionId existed.
+  if (!meta.sessionId) {
+    meta = { ...meta, sessionId: crypto.randomBytes(12).toString("hex") };
+    await redis.set(META_KEY, meta);
+  }
+  return meta;
 }
 
 export async function setMeta(redis, meta) {
