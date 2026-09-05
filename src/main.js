@@ -13,6 +13,39 @@ let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
 
+const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
+
+function clearOldPracticeSession() {
+  // Clear only this practice game's browser cache. Wedding-game storage is untouched.
+  localStorage.removeItem("pbrPracticePlayer");
+  localStorage.removeItem("pbrPracticeLastPassword");
+  localStorage.removeItem("pbrPracticeCopiedPassword");
+
+  // Walter/egg keys include the old player id, so remove every practice key
+  // in those two namespaces when a completely new game session is detected.
+  for (let i = localStorage.length - 1; i >= 0; i--) {
+    const key = localStorage.key(i) || "";
+    if (key.startsWith("pbrPracticeWalter:") || key.startsWith("pbrPracticeEgg:")) {
+      localStorage.removeItem(key);
+    }
+  }
+
+  player = null;
+  lastOwnPassword = "";
+  copiedPassword = "";
+}
+
+function syncPracticeSession(nextState) {
+  const sessionId = String(nextState?.meta?.sessionId || "");
+  if (!sessionId) return;
+  const storedSessionId = localStorage.getItem(SESSION_STORAGE_KEY) || "";
+
+  if (storedSessionId !== sessionId) {
+    clearOldPracticeSession();
+    localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
+  }
+}
+
 function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, c => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
@@ -277,6 +310,10 @@ async function refresh() {
     const nextState = await api();
     if (seq < appliedRefreshSequence) return;
     appliedRefreshSequence = seq;
+
+    // A host reset creates a new sessionId. As soon as a participant's phone
+    // sees it, remove cached password/player/minigame data from the old test.
+    syncPracticeSession(nextState);
 
     const changed = JSON.stringify(nextState) !== JSON.stringify(state);
     const hadError = Boolean(error);
