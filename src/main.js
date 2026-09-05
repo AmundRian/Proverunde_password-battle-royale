@@ -25,7 +25,7 @@ function clearOldPracticeSession() {
   // in those two namespaces when a completely new game session is detected.
   for (let i = localStorage.length - 1; i >= 0; i--) {
     const key = localStorage.key(i) || "";
-    if (key.startsWith("pbrPracticeWalter:") || key.startsWith("pbrPracticeEgg:")) {
+    if (key.startsWith("pbrPracticeWalter:") || key.startsWith("pbrPracticeEgg:") || key.startsWith("pbrPracticeVote:")) {
       localStorage.removeItem(key);
     }
   }
@@ -87,12 +87,12 @@ function secondsLeft() {
 }
 
 function walterStorageKey() {
-  return player?.id ? `pbrPracticeWalter:${player.id}:7` : "";
+  return player?.id ? `pbrPracticeWalter:${player.id}:8` : "";
 }
 
 function walterSteps() {
   const self = me();
-  const server = self?.walterRound === 7 ? Number(self?.walterSteps || 0) : 0;
+  const server = self?.walterRound === 8 ? Number(self?.walterSteps || 0) : 0;
   const key = walterStorageKey();
   const local = key ? Number(localStorage.getItem(key) || 0) : 0;
   return Math.max(0, Math.min(25, Math.max(server, local)));
@@ -104,7 +104,7 @@ function setWalterLocalSteps(steps) {
 }
 
 function walterHtml() {
-  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 7 || !me()?.alive) return "";
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 8 || !me()?.alive) return "";
   const steps = walterSteps();
   const left = 5 + (steps / 25) * 89;
   const done = steps >= 25;
@@ -114,7 +114,7 @@ function walterHtml() {
     <div class="walter-copy">
       <div>
         <strong>${done ? "Walter er over målstreken! 🏁" : "Dytt Walter over målstreken"}</strong>
-        <small>Kun i runde 7 · 25 trykk totalt</small>
+        <small>Kun i runde 8 · 25 trykk totalt</small>
       </div>
       <span id="walter-count">${steps} / 25 trykk</span>
     </div>
@@ -155,7 +155,7 @@ function updateWalterDom(steps, animate = true) {
   if (message) message.textContent = safe >= 25 ? "✓ Walter er i mål! Nå kan du endre passordet ditt, legge til minst tre emojier og deretter levere." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
   if (challenge) challenge.classList.toggle("done", safe >= 25);
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
-  if (submitButton && state?.meta?.round === 7) submitButton.disabled = safe < 25 || secondsLeft() === 0;
+  if (submitButton && state?.meta?.round === 8) submitButton.disabled = safe < 25 || secondsLeft() === 0;
   if (animate && image) {
     image.classList.remove("walter-hop");
     void image.offsetWidth;
@@ -164,8 +164,52 @@ function updateWalterDom(steps, animate = true) {
   }
 }
 
+function voteStorageKey() {
+  return player?.id ? `pbrPracticeVote:${player.id}:4` : "";
+}
+
+function selectedVoteId() {
+  const key = voteStorageKey();
+  return key ? (localStorage.getItem(key) || "") : "";
+}
+
+function setSelectedVoteId(targetId) {
+  const key = voteStorageKey();
+  if (key) localStorage.setItem(key, String(targetId || ""));
+}
+
+function lifeHtml(self) {
+  if (!self?.alive || !state?.meta?.round) return "";
+  const round = Number(state.meta.round || 0);
+  const lives = Math.max(0, Number(self.lives ?? (round <= 3 ? 2 : 1)));
+  if (round <= 3) {
+    const icons = lives >= 2 ? "❤️ ❤️" : lives === 1 ? "❤️ 🖤" : "🖤 🖤";
+    return `<div class="life-banner training-life"><strong>${icons}</strong><div><b>Treningsliv</b><span>Du har to liv i de tre første rundene. Feil koster ett liv.</span></div></div>`;
+  }
+  return `<div class="life-banner sudden-life"><strong>❤️</strong><div><b>Ett liv fra runde 4</b><span>Fra nå av er du ute hvis du ikke oppfyller rundens krav.</span></div></div>`;
+}
+
+function voteHtml() {
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 4 || !me()?.alive) return "";
+  const self = me();
+  const selected = selectedVoteId();
+  const candidates = (state?.players || []).filter(p => p.alive && p.id !== self.id);
+  if (!candidates.length) {
+    return `<div class="vote-challenge"><div class="vote-head"><strong>☠️ Avstemning</strong><span>Ingen andre å stemme på</span></div></div>`;
+  }
+  return `<div class="vote-challenge">
+    <div class="vote-head"><div><strong>☠️ Stem ut en deltaker</strong><small>Velg én annen spiller. Du kan endre stemmen frem til runden avsluttes.</small></div><span>${selected ? "Stemme valgt" : "Velg én"}</span></div>
+    <div class="vote-table">
+      ${candidates.map(c => `<button type="button" class="vote-row ${selected === c.id ? "selected" : ""}" data-vote-id="${esc(c.id)}">
+        <span class="vote-name">${esc(c.name)}</span><span class="vote-skull">${selected === c.id ? "☠️" : "○"}</span>
+      </button>`).join("")}
+    </div>
+    <p class="vote-note">Først vurderes passordene. Deretter ryker de to høyest stemte blant spillerne som ellers ville gått videre.</p>
+  </div>`;
+}
+
 function eggStorageKey() {
-  return player?.id ? `pbrPracticeEgg:${player.id}:9` : "";
+  return player?.id ? `pbrPracticeEgg:${player.id}:10` : "";
 }
 
 function getEggState() {
@@ -220,7 +264,7 @@ function resetEggTimer() {
 }
 
 function eggHtml() {
-  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 9 || !me()?.alive) return "";
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 10 || !me()?.alive) return "";
   const egg = getEggState();
   const elapsed = eggElapsedMs();
   const stopped = egg && Number.isFinite(egg.stoppedElapsedMs);
@@ -358,15 +402,15 @@ function playersHtml() {
   return `<div class="players">
     ${players.map(p => {
       const roundResult = resultById.get(p.id);
-      const colourClass = state?.meta?.status === "results" && roundResult?.rank === 1
+      const colourClass = state?.meta?.status === "results" && roundResult?.rank === 1 && roundResult?.valid
         ? "leader"
         : (p.alive ? "alive" : "dead");
       return `<div class="player ${colourClass}">
         <div class="player-main">
           <strong>${esc(p.name)}</strong>
-          <small>${roundResult?.rank === 1 && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}</small>
+          <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && state.meta.round <= 3 && p.alive ? ` · ${Number(p.lives || 0) >= 2 ? "❤️❤️" : "❤️🖤"}` : ""}</small>
         </div>
-        <div class="dot" title="${roundResult?.rank === 1 ? "Førsteplass" : (p.alive ? "Med" : "Eliminert")}"></div>
+        <div class="dot" title="${roundResult?.rank === 1 && roundResult?.valid ? "Førsteplass" : (p.alive ? "Med" : "Eliminert")}"></div>
       </div>`;
     }).join("")}
   </div>`;
@@ -383,13 +427,14 @@ function resultsHtml() {
     </div>
     <p class="muted tiny">Passordene vises først når runden er avsluttet. Trykk <b>Kopier</b> hvis du vil bruke et annet passord som utgangspunkt i neste runde.</p>
     <div class="result-list">
-      ${r.players.map(p => `<div class="result-row ${p.rank === 1 ? "first-place" : (p.survived ? "survived" : "eliminated")}">
+      ${r.players.map(p => `<div class="result-row ${p.rank === 1 && p.valid ? "first-place" : (p.survived ? "survived" : "eliminated")}">
         <div class="rank">#${p.rank}</div>
         <div class="who"><strong>${esc(p.name)}</strong><small>${p.survived ? "Videre" : "Eliminert"}</small></div>
         <code>${p.password ? esc(p.password) : "—"}</code>
         <span class="length">${p.passwordLength ?? "—"} tegn</span>
         ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
-        ${!p.survived && p.reason ? `<div class="reason">${esc(p.reason)}</div>` : ""}
+        ${p.lives != null && r.round <= 3 ? `<span class="result-lives">${Number(p.lives) >= 2 ? "❤️❤️" : Number(p.lives) === 1 ? "❤️🖤" : "🖤🖤"}</span>` : ""}
+        ${p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : ""}
       </div>`).join("")}
     </div>
   </section>`;
@@ -415,8 +460,9 @@ function playerView() {
 
   if (state.meta.status === "round_open" && self.alive) {
     const starter = copiedPassword || lastOwnPassword || "";
-    const walterDone = state.meta.round !== 7 || walterSteps() >= 25;
+    const walterDone = state.meta.round !== 8 || walterSteps() >= 25;
     return `<section class="card accent play-card">
+      ${lifeHtml(self)}
       <div class="submit-head">
         <h2>Submit your password</h2>
         <div class="countdown" id="timer">${secondsLeft() ?? "—"}s</div>
@@ -434,12 +480,13 @@ function playerView() {
             required
             placeholder="Bygg et passord som følger alle reglene">
         </label>
+        ${voteHtml()}
         ${walterHtml()}
         ${eggHtml()}
-        ${state.meta.round === 9 ? "" : `<button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Submit / replace</button>`}
+        ${state.meta.round === 10 ? "" : `<button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Submit / replace</button>`}
       </form>
       ${self.hasSubmitted ? `<div class="feedback good">✓ Passordet er lagret. Resultatet vises når runden avsluttes.</div>` : ""}
-      <p class="muted tiny">${state.meta.round === 9 ? "Passordet fra forrige runde er forhåndsutfylt. I denne runden leveres det automatisk når du bekrefter egg-tiden." : "Passordet fra forrige runde er forhåndsutfylt. Du kan endre og sende inn på nytt helt til tiden går ut."}</p>
+      <p class="muted tiny">${state.meta.round === 10 ? "Passordet fra forrige runde er forhåndsutfylt. I denne runden leveres det automatisk når du bekrefter egg-tiden." : "Passordet fra forrige runde er forhåndsutfylt. Du kan endre og sende inn på nytt helt til tiden går ut."}</p>
     </section>`;
   }
 
@@ -448,9 +495,11 @@ function playerView() {
   }
 
   if (state.meta.status === "results") {
+    const lifeLost = self.alive && state.meta.round <= 3 && self.valid === false;
     return `<section class="card ${self.alive ? "winner" : "danger"}">
-      <h2>${self.alive ? `✓ Du gikk videre fra runde ${state.meta.round}` : `✕ Du ble eliminert i runde ${state.meta.round}`}</h2>
-      <p>${self.alive ? "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord." : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
+      <h2>${lifeLost ? "❤️ Du mistet ett liv, men er fortsatt med!" : (self.alive ? `✓ Du gikk videre fra runde ${state.meta.round}` : `✕ Du ble eliminert i runde ${state.meta.round}`)}</h2>
+      <p>${self.alive ? (state.meta.round === 3 ? "Du er videre. Fra neste runde har alle bare ett liv." : "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord.") : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
+      ${self.alive ? lifeHtml(self) : ""}
       ${copiedPassword ? `<div class="feedback good">Neste runde starter med det kopierte passordet: <code>${esc(copiedPassword)}</code></div>` : ""}
     </section>`;
   }
@@ -587,13 +636,13 @@ function bind() {
     e.preventDefault();
     const password = String(new FormData(e.currentTarget).get("password") || "");
     try {
-      if (state?.meta?.round === 9) {
-        throw new Error("I runde 9 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
+      if (state?.meta?.round === 10) {
+        throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
       }
-      const round7 = state?.meta?.round === 7;
+      const round7 = state?.meta?.round === 8;
       const completedWalterSteps = round7 ? walterSteps() : 0;
       if (round7 && completedWalterSteps < 25) {
-        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
+        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 8.");
       }
       const response = await api({
         action: "submit",
@@ -614,6 +663,20 @@ function bind() {
       render();
     }
   });
+
+  document.querySelectorAll(".vote-row").forEach(btn => btn.addEventListener("click", async () => {
+    const targetId = String(btn.dataset.voteId || "");
+    if (!targetId) return;
+    try {
+      const response = await api({ action: "vote", playerId: player.id, token: player.token, targetId });
+      setSelectedVoteId(response.targetId || targetId);
+      error = "";
+      render();
+    } catch (x) {
+      error = x.message;
+      render();
+    }
+  }));
 
   document.querySelector("#walter-button")?.addEventListener("click", () => {
     const current = walterSteps();
@@ -751,6 +814,7 @@ function bind() {
       localStorage.removeItem("pbrPracticeCopiedPassword");
       if (walterStorageKey()) localStorage.removeItem(walterStorageKey());
       if (eggStorageKey()) localStorage.removeItem(eggStorageKey());
+      if (voteStorageKey()) localStorage.removeItem(voteStorageKey());
       player = null;
       lastOwnPassword = "";
       copiedPassword = "";
@@ -780,7 +844,7 @@ function tick() {
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
   if (submitButton) {
     if (s === 0) submitButton.setAttribute("disabled", "");
-    else if (state?.meta?.round === 7) submitButton.disabled = walterSteps() < 25;
+    else if (state?.meta?.round === 8) submitButton.disabled = walterSteps() < 25;
   }
 }
 
