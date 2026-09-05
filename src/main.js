@@ -75,14 +75,24 @@ function walterHtml() {
   const steps = walterSteps();
   const left = 5 + (steps / 25) * 89;
   const done = steps >= 25;
+  const progress = Math.max(0, Math.min(100, (steps / 25) * 100));
+  const stepTicks = Array.from({ length: 25 }, (_, i) => `<i class="${i < steps ? "hit" : ""}"></i>`).join("");
   return `<div class="walter-challenge ${done ? "done" : ""}">
     <div class="walter-copy">
-      <strong>${done ? "Walter er over målstreken! 🏁" : "Dytt Walter over målstreken"}</strong>
+      <div>
+        <strong>${done ? "Walter er over målstreken! 🏁" : "Dytt Walter over målstreken"}</strong>
+        <small>Kun i runde 7 · 25 trykk totalt</small>
+      </div>
       <span id="walter-count">${steps} / 25 trykk</span>
     </div>
     <div class="walter-track" aria-label="Walter-bane med 25 intervaller">
+      <div class="walter-progress" id="walter-progress" style="width:${progress}%" aria-hidden="true"></div>
+      <div class="walter-step-grid" aria-hidden="true">${stepTicks}</div>
+      <div class="walter-start-label" aria-hidden="true">Start</div>
+      <div class="walter-finish-label" aria-hidden="true">Mål</div>
       <div class="walter-finish" aria-hidden="true"></div>
       <button id="walter-button" class="walter-dog" type="button" style="left:${left}%" ${done ? "disabled" : ""} aria-label="Dytt Walter ett steg frem">
+        <span class="walter-shadow" aria-hidden="true"></span>
         <img id="walter-image" src="${walterImage}" alt="Walter" draggable="false">
       </button>
     </div>
@@ -95,6 +105,7 @@ function updateWalterDom(steps, animate = true) {
   setWalterLocalSteps(safe);
   const left = 5 + (safe / 25) * 89;
   const button = document.querySelector("#walter-button");
+  const progress = document.querySelector("#walter-progress");
   const image = document.querySelector("#walter-image");
   const count = document.querySelector("#walter-count");
   const message = document.querySelector("#walter-message");
@@ -104,6 +115,10 @@ function updateWalterDom(steps, animate = true) {
     button.disabled = safe >= 25;
   }
   if (count) count.textContent = `${safe} / 25 trykk`;
+  if (progress) progress.style.width = `${(safe / 25) * 100}%`;
+  document.querySelectorAll(".walter-step-grid i").forEach((tick, index) => {
+    tick.classList.toggle("hit", index < safe);
+  });
   if (message) message.textContent = safe >= 25 ? "✓ Walter er i mål! Nå kan du endre passordet ditt, legge til minst tre emojier og deretter levere." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
   if (challenge) challenge.classList.toggle("done", safe >= 25);
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
