@@ -3,20 +3,22 @@ import crypto from "node:crypto";
 
 // Practice game v2: separate namespace from both the wedding game and the old practice rules.
 // Wedding game uses pbr:* and the previous practice version used pbr-practice:v1:*.
-const PREFIX = "pbr-practice:v4:";
+const PREFIX = "pbr-practice:v5:";
 export const META_KEY = `${PREFIX}meta`;
 export const PLAYERS_KEY = `${PREFIX}players`;
 export const NAMES_KEY = `${PREFIX}names`;
 export const WINNER_KEY = `${PREFIX}winner`;
+export const VOTES_KEY = `${PREFIX}votes`;
 
 export const RULES = [
   { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
   { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
+  { id: "voteVowels", text: "Du må stemme på en annen deltaker. De to høyest stemte blant deltakerne som ellers ville gått videre blir eliminert. Passordet ditt må også ha ulikt antall vokaler og konsonanter." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
   { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
-  { id: "primeNumber", text: "Passordet ditt må inneholde minst ett primtall mellom 0 og 100." },
-  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 7 – du trenger ikke dytte Walter i runde 8, 9 eller 10. Passordet ditt må også inneholde minst tre emojier." },
+  { id: "primeNumber", text: "Passordet ditt må inneholde minst ett primtall mellom 0 og 100. Merk: 1 er ikke et primtall." },
+  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 8 – du trenger ikke dytte Walter i senere runder. Passordet ditt må også inneholde minst tre emojier." },
   { id: "gCount", text: "Passordet ditt må avsluttes med et tall som er likt antall g-er (g/G) i passordet ditt." },
   { id: "eggTimer", text: "Før du får levere passordet ditt må du koke ett egg. Dra egget ned i kjelen. Ett sekund tilsvarer ett minutt. Stopp når du mener egget er smilende." },
   { id: "firstWins", text: "Den første deltakeren som leverer et gyldig passord, vinner prøverunden." }
@@ -233,7 +235,7 @@ export async function savePlayer(redis, player) {
 }
 
 export async function resetGame(redis) {
-  await Promise.all([redis.del(META_KEY), redis.del(PLAYERS_KEY), redis.del(NAMES_KEY), redis.del(WINNER_KEY)]);
+  await Promise.all([redis.del(META_KEY), redis.del(PLAYERS_KEY), redis.del(NAMES_KEY), redis.del(WINNER_KEY), redis.del(VOTES_KEY)]);
   const meta = defaultMeta();
   await setMeta(redis, meta);
   return meta;
@@ -300,6 +302,18 @@ function hasMaxOneA(value) {
   return (matches?.length || 0) <= 1;
 }
 
+function hasUnequalVowelsAndConsonants(value) {
+  const letters = [...String(value ?? "").toLocaleLowerCase("nb-NO")].filter(ch => /[a-zæøå]/u.test(ch));
+  const vowels = new Set(["a", "e", "i", "o", "u", "y", "æ", "ø", "å"]);
+  let vowelCount = 0;
+  let consonantCount = 0;
+  for (const ch of letters) {
+    if (vowels.has(ch)) vowelCount += 1;
+    else consonantCount += 1;
+  }
+  return vowelCount !== consonantCount;
+}
+
 const PRIMES_UNDER_100 = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]);
 
 function containsPrimeNumber(value) {
@@ -344,6 +358,7 @@ export function validatePassword(password, activeCount) {
       case "country": ok = containsCountry(p); break;
       case "upper2number": ok = hasTwoUppercaseAndNumber(p); break;
       case "rubikColourDeadlySin": ok = containsRubikColour(p) && containsDeadlySin(p); break;
+      case "voteVowels": ok = hasUnequalVowelsAndConsonants(p); break;
       case "primeMinister": ok = containsPrimeMinisterFirstName(p); break;
       case "maxOneA": ok = hasMaxOneA(p); break;
       case "primeNumber": ok = containsPrimeNumber(p); break;
