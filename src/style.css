@@ -328,3 +328,215 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .walter-dog { transition: none; }
   .walter-dog img.walter-hop { animation: none; }
 }
+
+/* Resultatfarger mellom rundene: 1. plass gul, videre grønn, ute rød. */
+.result-row.first-place {
+  background: linear-gradient(135deg, rgba(96,76,15,.78), rgba(47,39,14,.92));
+  border-color: #f0c84f;
+  box-shadow: 0 0 0 1px rgba(240,200,79,.18), 0 8px 28px rgba(0,0,0,.18);
+}
+.result-row.first-place .rank,
+.result-row.first-place .who strong { color: #ffe88c; }
+.result-row.survived {
+  background: linear-gradient(135deg, rgba(19,69,41,.76), rgba(14,37,28,.94));
+  border-color: #4faa72;
+}
+.result-row.survived .rank { color: #9cf3b8; }
+.result-row.eliminated {
+  opacity: 1;
+  background: linear-gradient(135deg, rgba(76,26,39,.78), rgba(43,19,27,.94));
+  border-color: #a74d64;
+}
+.result-row.eliminated .rank { color: #ff9eb1; }
+
+.player.leader {
+  background: rgba(88,70,17,.88);
+  border-color: #d9b746;
+}
+.player.leader .dot { background: #ffd85a; box-shadow: 0 0 0 4px rgba(255,216,90,.12); }
+.player.alive { border-color: rgba(77,157,105,.55); }
+.player.dead {
+  opacity: 1;
+  background: rgba(67,25,36,.64);
+  border-color: rgba(156,65,89,.72);
+}
+
+/* Runde 9: mobilvennlig egg-utfordring. */
+.egg-challenge {
+  margin: 4px 0 4px;
+  padding: 14px;
+  border: 1px solid #4b5272;
+  border-radius: 16px;
+  background: linear-gradient(145deg, rgba(29,34,55,.98), rgba(13,16,27,.98));
+  overflow: hidden;
+}
+.egg-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 7px;
+}
+.egg-title strong { font-size: .95rem; }
+.egg-title span { color: #aeb5ca; font-size: .75rem; font-weight: 800; white-space: nowrap; }
+.egg-instruction, .egg-note, .egg-hint {
+  color: #aeb5ca;
+  font-size: .78rem;
+  line-height: 1.4;
+  margin: 6px 0 8px;
+}
+.egg-hint { text-align: center; margin: 8px 0 0; }
+.egg-kitchen {
+  min-height: 245px;
+  display: grid;
+  grid-template-rows: 88px 28px 1fr;
+  place-items: center;
+  position: relative;
+  padding: 4px 0 0;
+}
+.egg-drag {
+  width: 82px;
+  height: 82px;
+  padding: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 28%, #fff 0 42%, #f4e9d2 70%, #d6c4a0 100%);
+  box-shadow: 0 8px 20px rgba(0,0,0,.32), inset -8px -10px 18px rgba(158,126,76,.12);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+  position: relative;
+  z-index: 8;
+  transition: filter .15s ease;
+}
+.egg-drag span { font-size: 52px; line-height: 1; filter: drop-shadow(0 3px 2px rgba(0,0,0,.18)); }
+.egg-drag.dragging { cursor: grabbing; filter: brightness(1.08); transition: none; }
+.egg-arrow { color: #d4d9ed; font-size: 25px; animation: egg-bob .9s ease-in-out infinite alternate; }
+@keyframes egg-bob { from { transform: translateY(-2px); } to { transform: translateY(4px); } }
+
+.pot-wrap {
+  width: 170px;
+  height: 122px;
+  position: relative;
+  display: block;
+  z-index: 2;
+}
+.pot-body {
+  position: absolute;
+  left: 20px;
+  right: 20px;
+  bottom: 0;
+  height: 82px;
+  border-radius: 8px 8px 34px 34px;
+  background: linear-gradient(90deg, #686f80, #c5cad2 40%, #8f96a4 72%, #565d6d);
+  border: 2px solid #dbe0e8;
+  box-shadow: inset 0 -12px 18px rgba(0,0,0,.18), 0 12px 22px rgba(0,0,0,.28);
+}
+.pot-handle {
+  position: absolute;
+  width: 54px;
+  height: 14px;
+  right: -50px;
+  top: 17px;
+  border-radius: 0 12px 12px 0;
+  background: #393e4a;
+  border: 2px solid #737b8b;
+}
+.pot-rim {
+  position: absolute;
+  z-index: 5;
+  left: 12px;
+  right: 12px;
+  top: 29px;
+  height: 24px;
+  border-radius: 50%;
+  background: #d9dde4;
+  border: 2px solid #f1f3f7;
+  box-shadow: inset 0 4px 5px rgba(0,0,0,.22);
+}
+.pot-water {
+  position: absolute;
+  z-index: 6;
+  left: 18px;
+  right: 18px;
+  top: 34px;
+  height: 16px;
+  border-radius: 50%;
+  background: #58c9ee;
+  overflow: visible;
+  box-shadow: 0 0 12px rgba(88,201,238,.5);
+}
+.pot-water span {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 2px solid rgba(255,255,255,.86);
+  border-radius: 50%;
+  animation: bubble 1s ease-in-out infinite;
+}
+.pot-water span:nth-child(1) { left: 18%; top: -2px; }
+.pot-water span:nth-child(2) { left: 49%; top: 3px; animation-delay: .3s; }
+.pot-water span:nth-child(3) { left: 76%; top: -3px; animation-delay: .55s; }
+.pot-water b { position: absolute; left: 50%; top: -18px; transform: translateX(-50%); font-size: 28px; }
+@keyframes bubble { 0% { transform: translateY(5px) scale(.7); opacity: .35; } 100% { transform: translateY(-13px) scale(1.15); opacity: 1; } }
+.pot-steam { position: absolute; z-index: 1; left: 42px; right: 42px; top: 0; height: 38px; }
+.pot-steam i {
+  position: absolute;
+  bottom: 0;
+  width: 9px;
+  height: 30px;
+  border-left: 3px solid rgba(255,255,255,.42);
+  border-radius: 50%;
+  animation: steam 1.25s ease-in-out infinite;
+}
+.pot-steam i:nth-child(1) { left: 8px; }
+.pot-steam i:nth-child(2) { left: 36px; animation-delay: .35s; }
+.pot-steam i:nth-child(3) { right: 8px; animation-delay: .7s; }
+@keyframes steam { 0% { transform: translateY(8px) translateX(0); opacity: 0; } 45% { opacity: .8; } 100% { transform: translateY(-8px) translateX(7px); opacity: 0; } }
+
+.cooking-scene {
+  display: grid;
+  grid-template-columns: minmax(150px, .8fr) minmax(130px, 1fr);
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0 12px;
+}
+.pot-active { margin: 0 auto; }
+.egg-clock {
+  border: 1px solid #3d4765;
+  border-radius: 14px;
+  background: #0b0f1a;
+  min-height: 116px;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+.egg-clock small { color: #8f98b6; font-weight: 900; letter-spacing: .16em; }
+.egg-clock strong { font-size: clamp(2.1rem, 10vw, 3.4rem); line-height: 1; color: #fff4bc; }
+.egg-clock span { color: #8f98b6; font-size: .72rem; }
+.egg-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.egg-actions .egg-confirm {
+  grid-column: 1 / -1;
+  background: #f4df82;
+  color: #1b180c;
+}
+.egg-challenge.stopped { border-color: #c9aa48; }
+.egg-challenge.stopped .egg-clock { border-color: #c9aa48; }
+
+@media (max-width: 520px) {
+  .egg-title { align-items: flex-start; }
+  .egg-kitchen { min-height: 230px; }
+  .egg-drag { width: 76px; height: 76px; }
+  .egg-drag span { font-size: 48px; }
+  .cooking-scene { grid-template-columns: 1fr 1fr; gap: 6px; }
+  .pot-wrap { transform: scale(.88); transform-origin: center; }
+  .egg-clock { min-height: 102px; }
+  .egg-actions { grid-template-columns: 1fr; }
+  .egg-actions .egg-confirm { grid-column: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .egg-arrow, .pot-water span, .pot-steam i { animation: none; }
+}
