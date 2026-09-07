@@ -737,9 +737,18 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   font-size: 1.1rem;
   line-height: 1.15;
 }
-.short-king-info div { display: grid; gap: 2px; }
-.short-king-info strong { color: #ffe68a; font-size: .82rem; }
-.short-king-info small { color: #b6bdd3; font-size: .73rem; line-height: 1.35; }
+.short-king-info div { display: grid; gap: 5px; }
+.short-king-info strong {
+  display: block;
+  color: #ffe68a;
+  font-size: .82rem;
+}
+.short-king-description {
+  display: block;
+  color: #b6bdd3;
+  font-size: .73rem;
+  line-height: 1.4;
+}
 .star-round-banner {
   display: flex;
   align-items: center;
@@ -781,6 +790,6 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
 @media (max-width: 520px) {
   .nickname-stars { font-size: .76rem; letter-spacing: 0; }
   .short-king-info { padding: 9px 10px; }
-  .short-king-info small { font-size: .7rem; }
+  .short-king-description { font-size: .7rem; }
   .star-round-banner { padding: 9px 10px; }
 }
