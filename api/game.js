@@ -33,12 +33,14 @@ function publicState(meta, players) {
       reason: reveal ? p.reason || null : null,
       walterRound: p.walterRound ?? null,
       walterSteps: Number(p.walterSteps || 0),
-      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2
+      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2,
+      stars: Math.max(0, Number(p.stars || 0))
     })).sort((a,b) => Number(b.alive)-Number(a.alive) || a.name.localeCompare(b.name,"nb"))
   };
 }
 
-function buildRoundResult(round, starters, finals) {
+function buildRoundResult(round, starters, finals, starWinnerIds = []) {
+  const starSet = new Set(starWinnerIds);
   const byId = new Map(finals.map(p => [p.id, p]));
   const players = starters.map(s => {
     const p = byId.get(s.id) || s;
@@ -46,26 +48,45 @@ function buildRoundResult(round, starters, finals) {
       id: p.id, name: p.name, password: p.submission || null,
       passwordLength: passwordLength(p.submission), submitted: !!p.submission,
       survived: !!p.alive, valid: !!p.valid, reason: p.reason || null, failures: p.failures || [],
-      submittedAt: p.submittedAt || null, lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : null
+      submittedAt: p.submittedAt || null, lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : null,
+      stars: Math.max(0, Number(p.stars || 0)), starEarned: starSet.has(p.id)
     };
   }).sort((a,b) => {
     if (a.survived !== b.survived) return Number(b.survived)-Number(a.survived);
     if (a.valid !== b.valid) return Number(b.valid)-Number(a.valid);
     if (a.submitted !== b.submitted) return Number(b.submitted)-Number(a.submitted);
-    return (a.passwordLength ?? 9999) - (b.passwordLength ?? 9999) || (a.submittedAt ?? 0)-(b.submittedAt ?? 0);
+    const lengthDiff = (a.passwordLength ?? 9999) - (b.passwordLength ?? 9999);
+    if (lengthDiff) return lengthDiff;
+    const starDiff = Number(b.stars || 0) - Number(a.stars || 0);
+    if (starDiff) return starDiff;
+    return (a.submittedAt ?? 0)-(b.submittedAt ?? 0);
   });
   players.forEach((p,i) => p.rank = i+1);
-  const survivors = players.filter(p => p.survived && p.submitted);
-  const shortest = survivors.length ? Math.min(...survivors.map(p => p.passwordLength)) : null;
+  const validSubmitted = players.filter(p => p.submitted && (p.valid || p.starEarned));
+  const shortest = validSubmitted.length ? Math.min(...validSubmitted.map(p => p.passwordLength)) : null;
+  const starWinners = players.filter(p => p.starEarned).map(p => ({ id: p.id, name: p.name, passwordLength: p.passwordLength, stars: p.stars }));
   return {
     round, started: starters.length,
     submitted: players.filter(p => p.submitted).length,
     eliminated: players.filter(p => !p.survived).length,
     remaining: finals.filter(p => p.alive).length,
     shortestPasswordLength: shortest,
+    starWinners,
     players: players.map(({submittedAt,...rest}) => rest),
     closedAt: Date.now()
   };
+}
+
+async function awardShortestPasswordStars(redis, players) {
+  const eligible = players.filter(p => p.submission && p.valid === true);
+  if (!eligible.length) return [];
+  const shortest = Math.min(...eligible.map(p => passwordLength(p.submission)));
+  const winners = eligible.filter(p => passwordLength(p.submission) === shortest);
+  for (const p of winners) {
+    p.stars = Math.max(0, Number(p.stars || 0)) + 1;
+    await savePlayer(redis, p);
+  }
+  return winners.map(p => p.id);
 }
 
 export default async function handler(req, res) {
@@ -87,7 +108,7 @@ export default async function handler(req, res) {
       const id = createId(), token = createToken();
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2 };
+      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token }, state: publicState(meta, players) });
@@ -178,8 +199,12 @@ export default async function handler(req, res) {
               }
               await savePlayer(redis, q);
             }
+            // Finalerunden avsluttes idet første gyldige passord vinner.
+            // Dermed er vinneren også den eneste gyldige kandidaten til rundestjernen.
+            const winnerCurrent = await getPlayer(redis, p.id);
+            const starWinnerIds = await awardShortestPasswordStars(redis, winnerCurrent ? [winnerCurrent] : []);
             const finals = await getPlayers(redis);
-            const result = buildRoundResult(meta.round, starters, finals);
+            const result = buildRoundResult(meta.round, starters, finals, starWinnerIds);
             const history = [...(meta.roundHistory || []), result];
             meta = await setMeta(redis, {
               ...meta,
@@ -315,6 +340,15 @@ export default async function handler(req, res) {
         await savePlayer(redis, p);
       }
 
+      // Stjernen deles ut etter at rundens krav er vurdert, men før eventuell
+      // avstemnings-eliminering. Dermed kan en spiller med et gyldig og kortest
+      // passord få stjernen selv om vedkommende deretter stemmes ut i runde 4.
+      const validatedBeforeSpecialElimination = await getPlayers(redis);
+      const starWinnerIds = await awardShortestPasswordStars(
+        redis,
+        validatedBeforeSpecialElimination.filter(p => starters.some(s => s.id === p.id))
+      );
+
       // Runde 4: passordene vurderes først. Deretter elimineres de to høyest
       // stemte blant spillerne som ellers ville gått videre. Stemmer på spillere
       // som allerede røk på passordkravet teller derfor ikke i utslagsdelen.
@@ -371,7 +405,7 @@ export default async function handler(req, res) {
       }
 
       const finals = await getPlayers(redis);
-      const result = buildRoundResult(meta.round, starters, finals);
+      const result = buildRoundResult(meta.round, starters, finals, starWinnerIds);
       const history = [...(meta.roundHistory || []), result];
       const alive = finals.filter(p => p.alive && p.submission);
       const lastRound = meta.round >= RULES.length;
