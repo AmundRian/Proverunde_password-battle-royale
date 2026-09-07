@@ -413,7 +413,13 @@ function shortKingData() {
 }
 
 function shortKingInfoHtml() {
-  return `<div class="short-king-info"><span class="star-icon">⭐</span><div><strong>Kortest gir stjerne</strong><small>Korteste gyldige passord hver runde får en stjerne. Flest stjerner til slutt blir THE SHORT KING.</small></div></div>`;
+  return `<div class="short-king-info">
+    <span class="star-icon">⭐</span>
+    <div class="short-king-copy">
+      <strong>Kortest gir stjerne</strong>
+      <span class="short-king-description">Korteste gyldige passord hver runde får en stjerne. Flest stjerner til slutt blir THE SHORT KING.</span>
+    </div>
+  </div>`;
 }
 
 function playerStatusText(p) {
