@@ -398,6 +398,24 @@ function rulesHtml() {
   </ol>`;
 }
 
+function starCountText(count) {
+  const n = Math.max(0, Number(count || 0));
+  if (!n) return "";
+  if (n <= 5) return "⭐".repeat(n);
+  return `⭐×${n}`;
+}
+
+function shortKingData() {
+  const players = state?.players || [];
+  const maxStars = players.length ? Math.max(0, ...players.map(p => Number(p.stars || 0))) : 0;
+  const winners = maxStars > 0 ? players.filter(p => Number(p.stars || 0) === maxStars) : [];
+  return { maxStars, winners };
+}
+
+function shortKingInfoHtml() {
+  return `<div class="short-king-info"><span class="star-icon">⭐</span><div><strong>Kortest gir stjerne</strong><small>Korteste gyldige passord hver runde får en stjerne. Flest stjerner til slutt blir THE SHORT KING.</small></div></div>`;
+}
+
 function playerStatusText(p) {
   if (!p.alive) return `Ute${p.eliminatedRound ? ` · runde ${p.eliminatedRound}` : ""}`;
   if (state?.meta?.status === "round_open") return p.hasSubmitted ? "Levert" : "Venter";
@@ -419,7 +437,7 @@ function playersHtml() {
         : (p.alive ? "alive" : "dead");
       return `<div class="player ${colourClass}">
         <div class="player-main">
-          <strong>${esc(p.name)}</strong>
+          <strong class="player-name-line"><span>${esc(p.name)}</span>${["results","game_over"].includes(state?.meta?.status) && Number(p.stars || 0) > 0 ? `<span class="nickname-stars" title="${Number(p.stars || 0)} stjerne${Number(p.stars || 0) === 1 ? "" : "r"}">${starCountText(p.stars)}</span>` : ""}</strong>
           <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && state.meta.round <= 3 && p.alive ? ` · ${Number(p.lives || 0) >= 2 ? "❤️❤️" : "❤️🖤"}` : ""}</small>
         </div>
         <div class="dot" title="${roundResult?.rank === 1 && roundResult?.valid ? "Førsteplass" : (p.alive ? "Med" : "Eliminert")}"></div>
@@ -438,10 +456,11 @@ function resultsHtml() {
       <span>${r.remaining} videre</span>
     </div>
     <p class="muted tiny">Passordene vises først når runden er avsluttet. Trykk <b>Kopier</b> hvis du vil bruke et annet passord som utgangspunkt i neste runde.</p>
+    ${r.starWinners?.length ? `<div class="star-round-banner"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${esc(r.starWinners.map(w => w.name).join(" & "))} · ${r.shortestPasswordLength} tegn</small></div></div>` : ""}
     <div class="result-list">
       ${r.players.map(p => `<div class="result-row ${p.rank === 1 && p.valid ? "first-place" : (p.survived ? "survived" : "eliminated")}">
         <div class="rank">#${p.rank}</div>
-        <div class="who"><strong>${esc(p.name)}</strong><small>${p.survived ? "Videre" : "Eliminert"}</small></div>
+        <div class="who"><strong class="result-name-line"><span>${esc(p.name)}</span>${Number(p.stars || 0) > 0 ? `<span class="nickname-stars">${starCountText(p.stars)}</span>` : ""}</strong><small>${p.survived ? "Videre" : "Eliminert"}${p.starEarned ? " · ⭐ kortest" : ""}</small></div>
         <code>${p.password ? esc(p.password) : "—"}</code>
         <span class="length">${p.passwordLength ?? "—"} tegn</span>
         ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
@@ -475,6 +494,7 @@ function playerView() {
     const walterDone = state.meta.round !== 8 || walterSteps() >= 25;
     return `<section class="card accent play-card">
       ${lifeHtml(self)}
+      ${shortKingInfoHtml()}
       <div class="submit-head">
         <h2>Submit your password</h2>
         <div class="countdown" id="timer">${secondsLeft() ?? "—"}s</div>
@@ -517,10 +537,12 @@ function playerView() {
   }
 
   if (state.meta.status === "game_over") {
+    const shortKing = shortKingData();
     return `<section class="card winner finish">
       <h2>Prøverunden er over 🎉</h2>
       <p>Nå kjenner du flyten: skriv → send → vent → se resultat → eventuelt kopier.</p>
-      ${state.meta.winners?.length ? `<div class="winner-box">Vinner av prøverunden: <b>${esc(state.meta.winners.join(" & "))}</b> 🎉</div>` : ""}
+      ${state.meta.winners?.length ? `<div class="winner-box"><small>🏆 VINNER</small><b>${esc(state.meta.winners.join(" & "))}</b></div>` : ""}
+      ${shortKing.winners.length ? `<div class="short-king-box"><small>⭐ THE SHORT KING${shortKing.winners.length > 1 ? "S" : ""}</small><b>${esc(shortKing.winners.map(p => p.name).join(" & "))}</b><span>${shortKing.maxStars} stjerne${shortKing.maxStars === 1 ? "" : "r"}</span></div>` : ""}
     </section>`;
   }
 
