@@ -704,3 +704,83 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .vote-head { gap:8px; }
   .vote-row { min-height:48px; padding:10px 11px; }
 }
+
+/* Short King: kompakt stjernevisning, laget for mobil. */
+.player-name-line,
+.result-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+.nickname-stars {
+  color: #ffd85a;
+  font-size: .82rem;
+  line-height: 1;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  filter: drop-shadow(0 1px 4px rgba(255,216,90,.16));
+}
+.short-king-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,216,90,.24);
+  background: rgba(255,216,90,.07);
+}
+.short-king-info .star-icon {
+  flex: 0 0 auto;
+  font-size: 1.1rem;
+  line-height: 1.15;
+}
+.short-king-info div { display: grid; gap: 2px; }
+.short-king-info strong { color: #ffe68a; font-size: .82rem; }
+.short-king-info small { color: #b6bdd3; font-size: .73rem; line-height: 1.35; }
+.star-round-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,216,90,.34);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(83,68,20,.58), rgba(37,32,18,.7));
+}
+.star-round-banner > span { font-size: 1.35rem; }
+.star-round-banner > div { display: grid; gap: 1px; }
+.star-round-banner strong { color: #ffe58b; font-size: .84rem; }
+.star-round-banner small { color: #d8cfaa; font-size: .74rem; }
+.winner-box,
+.short-king-box {
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+.winner-box small,
+.short-king-box small {
+  font-weight: 900;
+  letter-spacing: .08em;
+  font-size: .7rem;
+}
+.winner-box b,
+.short-king-box b { font-size: 1.15rem; }
+.short-king-box {
+  margin-top: 10px;
+  padding: 13px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #332b12, #1e1b11);
+  border: 1px solid rgba(255,216,90,.34);
+  color: #ffe797;
+}
+.short-king-box span { color: #cfc39a; font-size: .8rem; }
+
+@media (max-width: 520px) {
+  .nickname-stars { font-size: .76rem; letter-spacing: 0; }
+  .short-king-info { padding: 9px 10px; }
+  .short-king-info small { font-size: .7rem; }
+  .star-round-banner { padding: 9px 10px; }
+}
