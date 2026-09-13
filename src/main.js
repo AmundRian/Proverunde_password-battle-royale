@@ -409,7 +409,7 @@ function rulesHtml() {
   if (!state?.rules?.length) {
     return `<p class="muted">Reglene kommer når hosten starter prøverunden.</p>`;
   }
-  return `<ol class="rules">
+  return `<ol class="rules active-rules-list">
     ${state.rules.map((r, i) => `<li class="${i === state.rules.length - 1 ? "latest-rule" : ""}"><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}
   </ol>`;
 }
