@@ -52,6 +52,22 @@ function esc(v) {
   }[c]));
 }
 
+function teamSizeFromNickname(name) {
+  const value = String(name || "").trim();
+  const explicit = value.match(/\(\s*([2-6])\s*\)\s*$/);
+  if (explicit) return Number(explicit[1]);
+  const parts = value
+    .split(/\s*(?:&|\/|\+|,|\bog\b|\band\b)\s*/iu)
+    .map(part => part.trim())
+    .filter(Boolean);
+  return Math.max(1, Math.min(6, parts.length));
+}
+
+function teamHintHtml(name = "") {
+  const size = teamSizeFromNickname(name);
+  return size > 1 ? `👥 Lag på ${size} · +${size - 1} tegn` : "";
+}
+
 function statusText(s) {
   return ({
     lobby: "Lobby",
@@ -394,7 +410,7 @@ function rulesHtml() {
     return `<p class="muted">Reglene kommer når hosten starter prøverunden.</p>`;
   }
   return `<ol class="rules">
-    ${state.rules.map((r, i) => `<li><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}
+    ${state.rules.map((r, i) => `<li class="${i === state.rules.length - 1 ? "latest-rule" : ""}"><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}
   </ol>`;
 }
 
@@ -462,13 +478,13 @@ function resultsHtml() {
       <span>${r.remaining} videre</span>
     </div>
     <p class="muted tiny">Passordene vises først når runden er avsluttet. Trykk <b>Kopier</b> hvis du vil bruke et annet passord som utgangspunkt i neste runde.</p>
-    ${r.starWinners?.length ? `<div class="star-round-banner"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${esc(r.starWinners.map(w => w.name).join(" & "))} · ${r.shortestPasswordLength} tegn</small></div></div>` : ""}
+    ${r.starWinners?.length ? `<div class="star-round-banner"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${esc(r.starWinners.map(w => w.name).join(" & "))} · ${r.shortestPasswordLength} tegn${r.starWinners.some(w => Number(w.teamPenalty || 0) > 0) ? " (inkl. lagtillegg)" : ""}</small></div></div>` : ""}
     <div class="result-list">
       ${r.players.map(p => `<div class="result-row ${p.rank === 1 && p.valid ? "first-place" : (p.survived ? "survived" : "eliminated")}">
         <div class="rank">#${p.rank}</div>
         <div class="who"><strong class="result-name-line"><span>${esc(p.name)}</span>${Number(p.stars || 0) > 0 ? `<span class="nickname-stars">${starCountText(p.stars)}</span>` : ""}</strong><small>${p.survived ? "Videre" : "Eliminert"}${p.starEarned ? " · ⭐ kortest" : ""}</small></div>
         <code>${p.password ? esc(p.password) : "—"}</code>
-        <span class="length">${p.passwordLength ?? "—"} tegn</span>
+        <span class="length">${p.effectivePasswordLength ?? p.passwordLength ?? "—"} tegn${Number(p.teamPenalty || 0) > 0 ? ` <small>(${p.passwordLength}+${p.teamPenalty})</small>` : ""}</span>
         ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
         ${p.lives != null && r.round <= 3 ? `<span class="result-lives">${Number(p.lives) >= 2 ? "❤️❤️" : Number(p.lives) === 1 ? "❤️🖤" : "🖤🖤"}</span>` : ""}
         ${p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : ""}
@@ -488,7 +504,8 @@ function playerView() {
       <h2>Join the game</h2>
       <form id="join-form">
         <label>Nickname
-          <input name="name" maxlength="24" placeholder="Ditt navn" autocomplete="off" required>
+          <input id="nickname-input" name="name" maxlength="48" placeholder="Ditt navn" autocomplete="off" required>
+          <small id="team-hint" class="team-hint" aria-live="polite"></small>
         </label>
         <button>Join</button>
       </form>
@@ -501,8 +518,7 @@ function playerView() {
     return `<section class="card accent play-card">
       ${lifeHtml(self)}
       ${shortKingInfoHtml()}
-      <div class="submit-head">
-        <h2>Submit your password</h2>
+      <div class="submit-head compact-submit-head">
         <div class="countdown" id="timer">${secondsLeft() ?? "—"}s</div>
       </div>
       <form id="submit-form">
@@ -521,10 +537,10 @@ function playerView() {
         ${voteHtml()}
         ${walterHtml()}
         ${eggHtml()}
-        ${state.meta.round === 10 ? "" : `<button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Submit / replace</button>`}
+        ${state.meta.round === 10 ? "" : `<button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Lever passord</button>`}
       </form>
       ${self.hasSubmitted ? `<div class="feedback good">✓ Passordet er lagret. Resultatet vises når runden avsluttes.</div>` : ""}
-      <p class="muted tiny">${state.meta.round === 10 ? "Passordet fra forrige runde er forhåndsutfylt. I denne runden leveres det automatisk når du bekrefter egg-tiden." : "Passordet fra forrige runde er forhåndsutfylt. Du kan endre og sende inn på nytt helt til tiden går ut."}</p>
+
     </section>`;
   }
 
@@ -552,7 +568,7 @@ function playerView() {
     </section>`;
   }
 
-  return `<section class="card accent"><h2>You're in</h2><p>Du er med som <strong>${esc(self.name)}</strong>. Vent på at hosten starter.</p></section>`;
+  return `<section class="card accent"><h2>You're in</h2><p>Du er med som <strong>${esc(self.name)}</strong>.</p>${Number(self.teamSize || 1) > 1 ? `<div class="team-badge">👥 Lag på ${self.teamSize} · +${Number(self.teamPenalty || self.teamSize - 1)} tegn</div>` : ""}</section>`;
 }
 
 function hostView() {
@@ -608,7 +624,6 @@ function render() {
       <div>
         <div class="eyebrow">TRYGG PRØVERUNDE</div>
         <h1>Password<br>Battle Royale</h1>
-        <p class="lede">Kort trening før bryllupsleken.</p>
       </div>
       <div class="status-block">
         <span>${statusText(meta.status)}</span>
@@ -641,7 +656,6 @@ function render() {
       </aside>
     </section>
 
-    <footer>Prøverunden bruker egne Redis-nøkler og påvirker ikke bryllupsleken.</footer>
   </main>`;
 
   bind();
@@ -649,6 +663,17 @@ function render() {
 }
 
 function bind() {
+  const nicknameInput = document.querySelector("#nickname-input");
+  const teamHint = document.querySelector("#team-hint");
+  const updateTeamHint = () => {
+    if (!teamHint) return;
+    const text = teamHintHtml(nicknameInput?.value || "");
+    teamHint.textContent = text;
+    teamHint.classList.toggle("show", Boolean(text));
+  };
+  nicknameInput?.addEventListener("input", updateTeamHint);
+  updateTeamHint();
+
   document.querySelector("#join-form")?.addEventListener("submit", async e => {
     e.preventDefault();
     const name = new FormData(e.currentTarget).get("name");
