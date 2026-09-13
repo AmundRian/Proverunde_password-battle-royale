@@ -793,3 +793,55 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .short-king-description { font-size: .7rem; }
   .star-round-banner { padding: 9px 10px; }
 }
+
+/* V6: mindre tekst, tydelig nyeste regel og lag-handicap */
+.rules li.latest-rule {
+  border-color: #f0c84f;
+  background: linear-gradient(135deg, rgba(54,45,18,.82), rgba(24,22,20,.96));
+  box-shadow: 0 0 0 1px rgba(240,200,79,.17), 0 0 18px rgba(240,200,79,.10);
+  animation: latest-rule-pulse 2.6s ease-in-out infinite;
+}
+.rules li.latest-rule > span {
+  background: #f0c84f;
+  color: #1a1710;
+}
+.rules li.latest-rule > div {
+  color: #fff3b8;
+  animation: latest-rule-text 2.6s ease-in-out infinite;
+}
+@keyframes latest-rule-pulse {
+  0%,100% { border-color:#d8b44d; box-shadow:0 0 0 1px rgba(240,200,79,.12),0 0 10px rgba(240,200,79,.06); }
+  50% { border-color:#ffe17d; box-shadow:0 0 0 1px rgba(255,225,125,.28),0 0 24px rgba(240,200,79,.18); }
+}
+@keyframes latest-rule-text {
+  0%,100% { color:#f7e7a4; }
+  50% { color:#fffbe5; }
+}
+.compact-submit-head {
+  justify-content: flex-end;
+  margin-bottom: 10px;
+}
+.team-hint {
+  display: none;
+  margin-top: 7px;
+  color: #ffe38a;
+  font-size: .76rem;
+  font-weight: 800;
+}
+.team-hint.show { display:block; }
+.team-badge {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 6px 9px;
+  border: 1px solid rgba(240,200,79,.3);
+  border-radius: 999px;
+  color: #ffe38a;
+  background: rgba(240,200,79,.08);
+  font-size: .76rem;
+  font-weight: 800;
+}
+.length small { color:#aeb5ca; font-size:.66rem; }
+@media (prefers-reduced-motion: reduce) {
+  .rules li.latest-rule,
+  .rules li.latest-rule > div { animation:none; }
+}
