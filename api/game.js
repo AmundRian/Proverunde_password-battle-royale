@@ -6,7 +6,26 @@ import {
 
 function send(res, status, body) { res.status(status).json(body); }
 function fail(message, status = 400) { const e = new Error(message); e.statusCode = status; throw e; }
-function cleanName(v) { return String(v || "").trim().replace(/\s+/g, " ").slice(0, 24); }
+function cleanName(v) { return String(v || "").trim().replace(/\s+/g, " ").slice(0, 48); }
+function teamSizeFromName(name) {
+  const value = String(name || "").trim();
+  // Explicit suffix has priority: "Amund (3)".
+  const explicit = value.match(/\(\s*([2-6])\s*\)\s*$/);
+  if (explicit) return Number(explicit[1]);
+
+  // Natural team separators: "og", "and", &, /, + and comma.
+  // Consecutive separators are treated as one separator.
+  const parts = value
+    .split(/\s*(?:&|\/|\+|,|\bog\b|\band\b)\s*/iu)
+    .map(part => part.trim())
+    .filter(Boolean);
+  return Math.max(1, Math.min(6, parts.length));
+}
+function teamPenalty(player) { return Math.max(0, Number(player?.teamSize || 1) - 1); }
+function effectivePasswordLength(player) {
+  const actual = passwordLength(player?.submission);
+  return actual == null ? null : actual + teamPenalty(player);
+}
 function hostKey(req, body) { return req.headers["x-host-key"] || body?.hostKey || ""; }
 function normalizedPassword(v) { return String(v ?? "").normalize("NFKC").trim().toLocaleLowerCase("nb-NO"); }
 function passwordLength(v) { return v == null ? null : [...String(v)].length; }
@@ -34,7 +53,9 @@ function publicState(meta, players) {
       walterRound: p.walterRound ?? null,
       walterSteps: Number(p.walterSteps || 0),
       lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2,
-      stars: Math.max(0, Number(p.stars || 0))
+      stars: Math.max(0, Number(p.stars || 0)),
+      teamSize: Math.max(1, Number(p.teamSize || 1)),
+      teamPenalty: teamPenalty(p)
     })).sort((a,b) => Number(b.alive)-Number(a.alive) || a.name.localeCompare(b.name,"nb"))
   };
 }
@@ -46,7 +67,8 @@ function buildRoundResult(round, starters, finals, starWinnerIds = []) {
     const p = byId.get(s.id) || s;
     return {
       id: p.id, name: p.name, password: p.submission || null,
-      passwordLength: passwordLength(p.submission), submitted: !!p.submission,
+      passwordLength: passwordLength(p.submission), effectivePasswordLength: effectivePasswordLength(p),
+      teamSize: Math.max(1, Number(p.teamSize || 1)), teamPenalty: teamPenalty(p), submitted: !!p.submission,
       survived: !!p.alive, valid: !!p.valid, reason: p.reason || null, failures: p.failures || [],
       submittedAt: p.submittedAt || null, lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : null,
       stars: Math.max(0, Number(p.stars || 0)), starEarned: starSet.has(p.id)
@@ -55,7 +77,7 @@ function buildRoundResult(round, starters, finals, starWinnerIds = []) {
     if (a.survived !== b.survived) return Number(b.survived)-Number(a.survived);
     if (a.valid !== b.valid) return Number(b.valid)-Number(a.valid);
     if (a.submitted !== b.submitted) return Number(b.submitted)-Number(a.submitted);
-    const lengthDiff = (a.passwordLength ?? 9999) - (b.passwordLength ?? 9999);
+    const lengthDiff = (a.effectivePasswordLength ?? 9999) - (b.effectivePasswordLength ?? 9999);
     if (lengthDiff) return lengthDiff;
     const starDiff = Number(b.stars || 0) - Number(a.stars || 0);
     if (starDiff) return starDiff;
@@ -63,8 +85,12 @@ function buildRoundResult(round, starters, finals, starWinnerIds = []) {
   });
   players.forEach((p,i) => p.rank = i+1);
   const validSubmitted = players.filter(p => p.submitted && (p.valid || p.starEarned));
-  const shortest = validSubmitted.length ? Math.min(...validSubmitted.map(p => p.passwordLength)) : null;
-  const starWinners = players.filter(p => p.starEarned).map(p => ({ id: p.id, name: p.name, passwordLength: p.passwordLength, stars: p.stars }));
+  const shortest = validSubmitted.length ? Math.min(...validSubmitted.map(p => p.effectivePasswordLength)) : null;
+  const starWinners = players.filter(p => p.starEarned).map(p => ({
+    id: p.id, name: p.name, passwordLength: p.passwordLength,
+    effectivePasswordLength: p.effectivePasswordLength, teamSize: p.teamSize,
+    teamPenalty: p.teamPenalty, stars: p.stars
+  }));
   return {
     round, started: starters.length,
     submitted: players.filter(p => p.submitted).length,
@@ -80,8 +106,8 @@ function buildRoundResult(round, starters, finals, starWinnerIds = []) {
 async function awardShortestPasswordStars(redis, players) {
   const eligible = players.filter(p => p.submission && p.valid === true);
   if (!eligible.length) return [];
-  const shortest = Math.min(...eligible.map(p => passwordLength(p.submission)));
-  const winners = eligible.filter(p => passwordLength(p.submission) === shortest);
+  const shortest = Math.min(...eligible.map(p => effectivePasswordLength(p)));
+  const winners = eligible.filter(p => effectivePasswordLength(p) === shortest);
   for (const p of winners) {
     p.stars = Math.max(0, Number(p.stars || 0)) + 1;
     await savePlayer(redis, p);
@@ -108,10 +134,11 @@ export default async function handler(req, res) {
       const id = createId(), token = createToken();
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const p = { id, name, token, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
+      const teamSize = teamSizeFromName(name);
+      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
-      return send(res, 200, { player: { id, name, token }, state: publicState(meta, players) });
+      return send(res, 200, { player: { id, name, token, teamSize }, state: publicState(meta, players) });
     }
 
     if (body.action === "walter_step") {
