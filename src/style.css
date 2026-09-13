@@ -845,3 +845,22 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .rules li.latest-rule,
   .rules li.latest-rule > div { animation:none; }
 }
+
+/* Ensure the newest rule is highlighted for both participants and host */
+.active-rules-list li.latest-rule,
+.rules-card .rules li.latest-rule {
+  border-color: #f0c84f !important;
+  background: linear-gradient(135deg, rgba(54,45,18,.88), rgba(24,22,20,.98)) !important;
+  box-shadow: 0 0 0 1px rgba(240,200,79,.20), 0 0 22px rgba(240,200,79,.14) !important;
+  animation: latest-rule-pulse 2.6s ease-in-out infinite;
+}
+.active-rules-list li.latest-rule > span,
+.rules-card .rules li.latest-rule > span {
+  background: #f0c84f !important;
+  color: #1a1710 !important;
+}
+.active-rules-list li.latest-rule > div,
+.rules-card .rules li.latest-rule > div {
+  color: #fff3b8 !important;
+  animation: latest-rule-text 2.6s ease-in-out infinite;
+}
