@@ -147,7 +147,7 @@ export default async function handler(req, res) {
     }
 
     if (body.action === "walter_step") {
-      if (meta.status !== "round_open" || meta.round !== 8) fail("Walter-oppgaven gjelder bare i runde 8.", 409);
+      if (meta.status !== "round_open" || meta.round !== 7) fail("Walter-oppgaven gjelder bare i runde 7.", 409);
       const p = await getPlayer(redis, body.playerId);
       if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
       if (!p.alive) fail("Du er allerede eliminert.", 409);
@@ -159,7 +159,7 @@ export default async function handler(req, res) {
     }
 
     if (body.action === "vote") {
-      if (meta.status !== "round_open" || meta.round !== 4) fail("Avstemningen gjelder bare i runde 4.", 409);
+      if (meta.status !== "round_open" || meta.round !== 9) fail("Avstemningen gjelder bare i runde 9.", 409);
       const voter = await getPlayer(redis, body.playerId);
       if (!voter || voter.token !== body.token) fail("Ugyldig spiller.", 401);
       if (!voter.alive) fail("Du er allerede eliminert.", 409);
@@ -182,14 +182,14 @@ export default async function handler(req, res) {
 
       // Runde 8: Walter-status sendes sammen med selve innleveringen.
       // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
-      if (meta.round === 8) {
+      if (meta.round === 7) {
         const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
         if (submittedWalterSteps >= 25) {
           p.walterRound = 8;
           p.walterSteps = 25;
         }
-        if (!(p.walterRound === 8 && Number(p.walterSteps || 0) >= 25)) {
-          fail("Du må dytte Walter over målstreken før du kan levere i runde 8.", 409);
+        if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+          fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
         }
       }
 
@@ -308,7 +308,7 @@ export default async function handler(req, res) {
       const players = await getPlayers(redis);
       const starters = players.filter(p => p.alive).map(p => ({...p}));
       const active = players.filter(p => p.alive);
-      const votesRaw = meta.round === 4 ? (await redis.hgetall(VOTES_KEY) || {}) : {};
+      const votesRaw = meta.round === 9 ? (await redis.hgetall(VOTES_KEY) || {}) : {};
       const votes = Object.fromEntries(Object.entries(votesRaw).map(([voterId, target]) => [voterId, String(target)]));
 
       // Determine the first submitter for each complete password (case-sensitive).
@@ -328,11 +328,11 @@ export default async function handler(req, res) {
         } else {
           const check = validatePassword(p.submission, meta.round);
           failures = [...check.failures];
-          if (meta.round === 4 && !votes[p.id]) {
-            failures.push("Du avga ikke en stemme på en annen deltaker i runde 4.");
+          if (meta.round === 9 && !votes[p.id]) {
+            failures.push("Du avga ikke en stemme på en annen deltaker i runde 9.");
           }
-          if (meta.round === 8 && !(p.walterRound === 8 && Number(p.walterSteps || 0) >= 25)) {
-            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 8.");
+          if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
+            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 7.");
           }
           if (meta.round === 10) {
             const eggSeconds = Number(p.eggSeconds);
@@ -374,7 +374,7 @@ export default async function handler(req, res) {
 
       // Stjernen deles ut etter at rundens krav er vurdert, men før eventuell
       // avstemnings-eliminering. Dermed kan en spiller med et gyldig og kortest
-      // passord få stjernen selv om vedkommende deretter stemmes ut i runde 4.
+      // passord få stjernen selv om vedkommende deretter stemmes ut i runde 9.
       const validatedBeforeSpecialElimination = await getPlayers(redis);
       const starWinnerIds = await awardShortestPasswordStars(
         redis,
@@ -384,7 +384,7 @@ export default async function handler(req, res) {
       // Runde 4: passordene vurderes først. Deretter elimineres de to høyest
       // stemte blant spillerne som ellers ville gått videre. Stemmer på spillere
       // som allerede røk på passordkravet teller derfor ikke i utslagsdelen.
-      if (meta.round === 4) {
+      if (meta.round === 9) {
         const afterPassword = await getPlayers(redis);
         const eligible = afterPassword.filter(p => p.alive);
         const eligibleIds = new Set(eligible.map(p => p.id));
