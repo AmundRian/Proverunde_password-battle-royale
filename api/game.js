@@ -152,7 +152,7 @@ export default async function handler(req, res) {
       if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
       if (!p.alive) fail("Du er allerede eliminert.", 409);
       const requested = Math.max(0, Math.min(25, Math.floor(Number(body.steps) || 0)));
-      if (p.walterRound !== 8) { p.walterRound = 8; p.walterSteps = 0; }
+      if (p.walterRound !== 7) { p.walterRound = 7; p.walterSteps = 0; }
       p.walterSteps = Math.max(Number(p.walterSteps || 0), requested);
       await savePlayer(redis, p);
       return send(res, 200, { ok: true, walterSteps: p.walterSteps });
@@ -180,12 +180,12 @@ export default async function handler(req, res) {
       const password = String(body.password ?? "");
       if (!password) fail("Skriv inn et passord.");
 
-      // Runde 8: Walter-status sendes sammen med selve innleveringen.
+      // Runde 7: Walter-status sendes sammen med selve innleveringen.
       // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
       if (meta.round === 7) {
         const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
         if (submittedWalterSteps >= 25) {
-          p.walterRound = 8;
+          p.walterRound = 7;
           p.walterSteps = 25;
         }
         if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
@@ -284,14 +284,14 @@ export default async function handler(req, res) {
       const players = await getPlayers(redis);
       const alive = players.filter(p => p.alive);
       if (!alive.length) fail("Ingen spillere er igjen.", 409);
-      if (nextRound === 4) await redis.del(VOTES_KEY);
+      if (nextRound === 9) await redis.del(VOTES_KEY);
       for (const p of alive) {
         p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
         // Runde 1–3 er treningsrunder med to liv. Fra runde 4 går alle
         // gjenværende spillere over til sudden death med ett liv.
         if (nextRound === 1 && !Number.isFinite(Number(p.lives))) p.lives = 2;
         if (nextRound === 4) p.lives = 1;
-        if (nextRound === 8) { p.walterRound = 8; p.walterSteps = 0; }
+        if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
       if (nextRound === RULES.length) await redis.del(WINNER_KEY);
