@@ -27,7 +27,12 @@ function effectivePasswordLength(player) {
   return actual == null ? null : actual + teamPenalty(player);
 }
 function hostKey(req, body) { return req.headers["x-host-key"] || body?.hostKey || ""; }
-function normalizedPassword(v) { return String(v ?? "").normalize("NFKC").trim().toLocaleLowerCase("nb-NO"); }
+function normalizedPassword(v) {
+  // Duplicate checking is intentionally case-sensitive.
+  // "LaOs3" and "LaoS3" are different passwords.
+  // We only normalize Unicode representation and trim accidental outer whitespace.
+  return String(v ?? "").normalize("NFKC").trim();
+}
 function passwordLength(v) { return v == null ? null : [...String(v)].length; }
 function clampSeconds(value) {
   const n = Number(value);
@@ -306,7 +311,7 @@ export default async function handler(req, res) {
       const votesRaw = meta.round === 4 ? (await redis.hgetall(VOTES_KEY) || {}) : {};
       const votes = Object.fromEntries(Object.entries(votesRaw).map(([voterId, target]) => [voterId, String(target)]));
 
-      // Determine the first submitter for each complete password (case-insensitive).
+      // Determine the first submitter for each complete password (case-sensitive).
       const ordered = active.filter(p => p.submission).sort((a,b) => (a.submittedAt||0)-(b.submittedAt||0));
       const firstByPassword = new Map();
       for (const p of ordered) {
