@@ -14,12 +14,12 @@ export const RULES = [
   { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
   { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
-  { id: "voteVowels", text: "Du må stemme på en annen deltaker. De to høyest stemte blant deltakerne som ellers ville gått videre blir eliminert. Passordet ditt må også ha ulikt antall vokaler og konsonanter." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
   { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
   { id: "primeNumber", text: "Passordet ditt må inneholde minst ett primtall mellom 0 og 100. Merk: 1 er ikke et primtall." },
-  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 8 – du trenger ikke dytte Walter i senere runder. Passordet ditt må også inneholde minst tre emojier." },
+  { id: "walterEmoji", text: "Du må dytte Walter over målstreken før du leverer svaret ditt. Walter-oppgaven gjelder kun i runde 7 – du trenger ikke dytte Walter i senere runder. Passordet ditt må også inneholde minst tre emojier." },
   { id: "gCount", text: "Passordet ditt må avsluttes med et tall som er likt antall g-er (g/G) i passordet ditt." },
+  { id: "voteVowels", text: "Du må stemme på en annen deltaker. De to høyest stemte blant deltakerne som ellers ville gått videre blir eliminert. Passordet ditt må også ha ulikt antall vokaler og konsonanter." },
   { id: "eggTimer", text: "Før du får levere passordet ditt må du koke ett egg. Dra egget ned i kjelen. Ett sekund tilsvarer ett minutt. Stopp når du mener egget er smilende." },
   { id: "firstWins", text: "Den første deltakeren som leverer et gyldig passord, vinner prøverunden." }
 ];
