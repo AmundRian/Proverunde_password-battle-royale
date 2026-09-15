@@ -120,7 +120,7 @@ function setWalterLocalSteps(steps) {
 }
 
 function walterHtml() {
-  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 8 || !me()?.alive) return "";
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 7 || !me()?.alive) return "";
   const steps = walterSteps();
   const left = 5 + (steps / 25) * 89;
   const done = steps >= 25;
@@ -130,7 +130,7 @@ function walterHtml() {
     <div class="walter-copy">
       <div>
         <strong>${done ? "Walter er over målstreken! 🏁" : "Dytt Walter over målstreken"}</strong>
-        <small>Kun i runde 8 · 25 trykk totalt</small>
+        <small>Kun i runde 7 · 25 trykk totalt</small>
       </div>
       <span id="walter-count">${steps} / 25 trykk</span>
     </div>
@@ -171,7 +171,7 @@ function updateWalterDom(steps, animate = true) {
   if (message) message.textContent = safe >= 25 ? "✓ Walter er i mål! Nå kan du endre passordet ditt, legge til minst tre emojier og deretter levere." : "Trykk på Walter. Hvert trykk flytter ham ett av 25 steg.";
   if (challenge) challenge.classList.toggle("done", safe >= 25);
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
-  if (submitButton && state?.meta?.round === 8) submitButton.disabled = safe < 25 || secondsLeft() === 0;
+  if (submitButton && state?.meta?.round === 7) submitButton.disabled = safe < 25 || secondsLeft() === 0;
   if (animate && image) {
     image.classList.remove("walter-hop");
     void image.offsetWidth;
@@ -218,7 +218,7 @@ function lifeHtml(self) {
 }
 
 function voteHtml() {
-  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 4 || !me()?.alive) return "";
+  if (state?.meta?.status !== "round_open" || state?.meta?.round !== 9 || !me()?.alive) return "";
   const self = me();
   const selected = selectedVoteId();
   const candidates = (state?.players || []).filter(p => p.alive && p.id !== self.id);
@@ -514,7 +514,7 @@ function playerView() {
 
   if (state.meta.status === "round_open" && self.alive) {
     const starter = copiedPassword || lastOwnPassword || "";
-    const walterDone = state.meta.round !== 8 || walterSteps() >= 25;
+    const walterDone = state.meta.round !== 7 || walterSteps() >= 25;
     return `<section class="card accent play-card">
       ${lifeHtml(self)}
       ${shortKingInfoHtml()}
@@ -704,10 +704,10 @@ function bind() {
       if (state?.meta?.round === 10) {
         throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
       }
-      const round7 = state?.meta?.round === 8;
+      const walterRound = state?.meta?.round === 7;
       const completedWalterSteps = round7 ? walterSteps() : 0;
       if (round7 && completedWalterSteps < 25) {
-        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 8.");
+        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
       }
       const response = await api({
         action: "submit",
@@ -909,7 +909,7 @@ function tick() {
   const submitButton = document.querySelector("#submit-form button[type='submit'], #submit-form button:not([type])");
   if (submitButton) {
     if (s === 0) submitButton.setAttribute("disabled", "");
-    else if (state?.meta?.round === 8) submitButton.disabled = walterSteps() < 25;
+    else if (state?.meta?.round === 7) submitButton.disabled = walterSteps() < 25;
   }
 }
 
