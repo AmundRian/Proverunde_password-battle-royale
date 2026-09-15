@@ -103,12 +103,12 @@ function secondsLeft() {
 }
 
 function walterStorageKey() {
-  return player?.id ? `pbrPracticeWalter:${player.id}:8` : "";
+  return player?.id ? `pbrPracticeWalter:${player.id}:7` : "";
 }
 
 function walterSteps() {
   const self = me();
-  const server = self?.walterRound === 8 ? Number(self?.walterSteps || 0) : 0;
+  const server = self?.walterRound === 7 ? Number(self?.walterSteps || 0) : 0;
   const key = walterStorageKey();
   const local = key ? Number(localStorage.getItem(key) || 0) : 0;
   return Math.max(0, Math.min(25, Math.max(server, local)));
@@ -705,8 +705,8 @@ function bind() {
         throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
       }
       const walterRound = state?.meta?.round === 7;
-      const completedWalterSteps = round7 ? walterSteps() : 0;
-      if (round7 && completedWalterSteps < 25) {
+      const completedWalterSteps = walterRound ? walterSteps() : 0;
+      if (walterRound && completedWalterSteps < 25) {
         throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
       }
       const response = await api({
@@ -714,7 +714,7 @@ function bind() {
         playerId: player.id,
         token: player.token,
         password,
-        ...(round7 ? { walterSteps: completedWalterSteps } : {})
+        ...(walterRound ? { walterSteps: completedWalterSteps } : {})
       });
       lastOwnPassword = password;
       copiedPassword = "";
