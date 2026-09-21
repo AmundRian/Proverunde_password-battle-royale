@@ -57,7 +57,7 @@ function publicState(meta, players) {
       reason: reveal ? p.reason || null : null,
       walterRound: p.walterRound ?? null,
       walterSteps: Number(p.walterSteps || 0),
-      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2,
+      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 3,
       stars: Math.max(0, Number(p.stars || 0)),
       teamSize: Math.max(1, Number(p.teamSize || 1)),
       teamPenalty: teamPenalty(p)
@@ -140,7 +140,7 @@ export default async function handler(req, res) {
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
       const teamSize = teamSizeFromName(name);
-      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
+      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 3, stars: 0 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token, teamSize }, state: publicState(meta, players) });
@@ -289,8 +289,8 @@ export default async function handler(req, res) {
         p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
         // Runde 1–3 er treningsrunder med to liv. Fra runde 4 går alle
         // gjenværende spillere over til sudden death med ett liv.
-        if (nextRound === 1 && !Number.isFinite(Number(p.lives))) p.lives = 2;
-        if (nextRound === 4) p.lives = 1;
+        if (nextRound === 1 && !Number.isFinite(Number(p.lives))) p.lives = 3;
+        if (nextRound === 9) p.lives = 1;
         if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
@@ -352,8 +352,8 @@ export default async function handler(req, res) {
         p.reason = reason;
 
         if (!p.valid) {
-          if (meta.round <= 3) {
-            const currentLives = Math.max(1, Number(p.lives || 2));
+          if (meta.round <= 8) {
+            const currentLives = Math.max(1, Number(p.lives || 3));
             p.lives = currentLives - 1;
             if (p.lives <= 0) {
               p.alive = false;
