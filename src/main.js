@@ -197,21 +197,21 @@ function setSelectedVoteId(targetId) {
 function lifeHtml(self) {
   if (!self?.alive || !state?.meta?.round) return "";
   const round = Number(state.meta.round || 0);
-  const lives = Math.max(0, Number(self.lives ?? (round <= 3 ? 2 : 1)));
-  if (round <= 3) {
-    const icons = lives >= 2 ? "❤️ ❤️" : lives === 1 ? "❤️ 🖤" : "🖤 🖤";
+  const lives = Math.max(0, Number(self.lives ?? (round <= 8 ? 3 : 1)));
+  if (round <= 8) {
+    const icons = lives >= 3 ? "❤️ ❤️ ❤️" : lives === 2 ? "❤️ ❤️ 🖤" : lives === 1 ? "❤️ 🖤 🖤" : "🖤 🖤 🖤";
     return `<div class="life-banner training-life">
       <strong class="life-icons">${icons}</strong>
       <div class="life-copy">
         <div class="life-title">Treningsliv</div>
-        <div class="life-description">Du har to liv i de tre første rundene. Feil koster ett liv.</div>
+        <div class="life-description">Du har tre liv frem til og med runde 8. Feil koster ett liv.</div>
       </div>
     </div>`;
   }
   return `<div class="life-banner sudden-life">
     <strong class="life-icons">❤️</strong>
     <div class="life-copy">
-      <div class="life-title">Ett liv fra runde 4</div>
+      <div class="life-title">Ett liv fra runde 9</div>
       <div class="life-description">Fra nå av er du ute hvis du ikke oppfyller rundens krav.</div>
     </div>
   </div>`;
@@ -409,9 +409,13 @@ function rulesHtml() {
   if (!state?.rules?.length) {
     return `<p class="muted">Reglene kommer når hosten starter prøverunden.</p>`;
   }
-  return `<ol class="rules active-rules-list">
-    ${state.rules.map((r, i) => `<li class="${i === state.rules.length - 1 ? "latest-rule" : ""}"><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}
-  </ol>`;
+  const latestIndex = state.rules.length - 1;
+  const oldRules = state.rules.slice(0, latestIndex);
+  const latest = state.rules[latestIndex];
+  return `<div class="rules-summary"><strong>${state.rules.length} regel${state.rules.length === 1 ? "" : "er"} gjelder i denne runden</strong><span>Alle tidligere regler gjelder fortsatt.</span></div>
+    ${oldRules.length ? `<div class="rules-section-label old-rules-label">Regler du fortsatt må følge</div><ol class="rules active-rules-list old-rules-list">${oldRules.map((r, i) => `<li><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}</ol>` : ""}
+    <div class="rules-section-label new-rule-label">NY REGEL</div>
+    <ol class="rules active-rules-list latest-only"><li class="latest-rule"><span>${latestIndex + 1}</span><div>${esc(latest.text)}</div></li></ol>`;
 }
 
 function starCountText(count) {
@@ -438,6 +442,24 @@ function shortKingInfoHtml() {
   </div>`;
 }
 
+function practiceFailureLabel(text) {
+  const value = String(text || "");
+  const exactIndex = (state?.rules || []).findIndex(r => r.text === value);
+  if (exactIndex >= 0) return `Regel ${exactIndex + 1}`;
+  if (value.includes("stemme") || value.includes("Stemmet ut")) return "Regel 9";
+  if (value.includes("Walter")) return "Regel 7";
+  if (value.includes("Egget")) return "Regel 10";
+  if (value.startsWith("Samme passord:")) return "Duplikatregel";
+  if (value === "Ingen passord ble levert.") return "Ingen innsending";
+  return "Regel";
+}
+
+function practiceFailuresHtml(failures) {
+  const list = Array.isArray(failures) ? failures.filter(Boolean) : [];
+  if (!list.length) return "";
+  return `<div class="failure-list">${list.map(f => `<div class="failure-item">❌ <strong>${esc(practiceFailureLabel(f))}:</strong> ${esc(f)}</div>`).join("")}</div>`;
+}
+
 function playerStatusText(p) {
   if (!p.alive) return `Ute${p.eliminatedRound ? ` · runde ${p.eliminatedRound}` : ""}`;
   if (state?.meta?.status === "round_open") return p.hasSubmitted ? "Levert" : "Venter";
@@ -460,7 +482,7 @@ function playersHtml() {
       return `<div class="player ${colourClass}">
         <div class="player-main">
           <strong class="player-name-line"><span>${esc(p.name)}</span>${["results","game_over"].includes(state?.meta?.status) && Number(p.stars || 0) > 0 ? `<span class="nickname-stars" title="${Number(p.stars || 0)} stjerne${Number(p.stars || 0) === 1 ? "" : "r"}">${starCountText(p.stars)}</span>` : ""}</strong>
-          <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && state.meta.round <= 3 && p.alive ? ` · ${Number(p.lives || 0) >= 2 ? "❤️❤️" : "❤️🖤"}` : ""}</small>
+          <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && state.meta.round <= 8 && p.alive ? ` · ${Number(p.lives || 0) >= 3 ? "❤️❤️❤️" : Number(p.lives || 0) === 2 ? "❤️❤️🖤" : "❤️🖤🖤"}` : ""}</small>
         </div>
         <div class="dot" title="${roundResult?.rank === 1 && roundResult?.valid ? "Førsteplass" : (p.alive ? "Med" : "Eliminert")}"></div>
       </div>`;
@@ -486,8 +508,8 @@ function resultsHtml() {
         <code>${p.password ? esc(p.password) : "—"}</code>
         <span class="length">${p.effectivePasswordLength ?? p.passwordLength ?? "—"} tegn${Number(p.teamPenalty || 0) > 0 ? ` <small>(${p.passwordLength}+${p.teamPenalty})</small>` : ""}</span>
         ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
-        ${p.lives != null && r.round <= 3 ? `<span class="result-lives">${Number(p.lives) >= 2 ? "❤️❤️" : Number(p.lives) === 1 ? "❤️🖤" : "🖤🖤"}</span>` : ""}
-        ${p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : ""}
+        ${p.lives != null && r.round <= 8 ? `<span class="result-lives">${Number(p.lives) >= 3 ? "❤️❤️❤️" : Number(p.lives) === 2 ? "❤️❤️🖤" : Number(p.lives) === 1 ? "❤️🖤🖤" : "🖤🖤🖤"}</span>` : ""}
+        ${p.failures?.length ? `<div class="reason ${p.survived ? "life-reason" : ""}">${practiceFailuresHtml(p.failures)}</div>` : (p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : "")}
       </div>`).join("")}
     </div>
   </section>`;
@@ -549,10 +571,12 @@ function playerView() {
   }
 
   if (state.meta.status === "results") {
-    const lifeLost = self.alive && state.meta.round <= 3 && self.valid === false;
+    const lifeLost = self.alive && state.meta.round <= 8 && self.valid === false;
+    const myRoundResult = (state?.roundResults?.players || []).find(p => p.id === self.id);
     return `<section class="card ${self.alive ? "winner" : "danger"}">
       <h2>${lifeLost ? "❤️ Du mistet ett liv, men er fortsatt med!" : (self.alive ? `✓ Du gikk videre fra runde ${state.meta.round}` : `✕ Du ble eliminert i runde ${state.meta.round}`)}</h2>
-      <p>${self.alive ? (state.meta.round === 3 ? "Du er videre. Fra neste runde har alle bare ett liv." : "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord.") : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
+      <p>${self.alive ? (state.meta.round === 8 ? "Du er videre. Fra neste runde har alle bare ett liv." : "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord.") : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
+      ${myRoundResult?.failures?.length ? practiceFailuresHtml(myRoundResult.failures) : ""}
       ${self.alive ? lifeHtml(self) : ""}
       ${copiedPassword ? `<div class="feedback good">Neste runde starter med det kopierte passordet: <code>${esc(copiedPassword)}</code></div>` : ""}
     </section>`;
@@ -589,6 +613,7 @@ function hostView() {
 
   return `<section class="card host-card">
     <div class="card-title"><h2>Host controls</h2><span>${alive} aktive</span></div>
+    ${state.meta.status === "round_open" ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
     ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `<div class="host-start">
       <label>Rundetid (sek)
         <input id="round-seconds" type="number" min="10" max="300" value="${state.meta.roundSeconds || 60}">
@@ -627,7 +652,7 @@ function render() {
       </div>
       <div class="status-block">
         <span>${statusText(meta.status)}</span>
-        <strong>${meta.round ? `Round ${meta.round}/${state.totalRules}` : `${total} spiller${total === 1 ? "" : "e"}`}</strong>
+        <strong>${meta.round ? `Runde ${meta.round} av ${state.totalRules}` : `${total} spiller${total === 1 ? "" : "e"}`}</strong>
         ${meta.status === "round_open"
           ? `<small id="header-countdown">${secondsLeft()}s igjen</small>`
           : `<small>${aliveCount} med</small>`}
@@ -639,7 +664,7 @@ function render() {
     <section class="grid">
       <div>
         <section class="card rules-card">
-          <div class="card-title"><h2>Active rules</h2><span>${meta.round}/${state.totalRules}</span></div>
+          <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `Runde ${meta.round} av ${state.totalRules}` : "Venter på start"}</span></div>
           ${rulesHtml()}
         </section>
 
