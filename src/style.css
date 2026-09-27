@@ -881,3 +881,88 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
 .failure-list { display:grid; gap:7px; margin-top:10px; }
 .failure-item { line-height:1.35; }
 @media (max-width: 600px) { .rules-summary { padding:10px 11px; } .rules-section-label { margin-top:12px; } }
+
+
+/* --- Wedding parity: two-life display + clear round-result feedback --- */
+.compact-life-banner {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+}
+.compact-life-banner .life-title { margin: 0; }
+.compact-life-banner .life-description { display: none; }
+
+.round-result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  text-align: center;
+  color: #fff;
+  overflow: auto;
+  animation: resultOverlayIn .42s cubic-bezier(.2,.8,.2,1) both;
+  backdrop-filter: blur(9px);
+}
+.round-result-overlay::before,
+.round-result-overlay::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  pointer-events: none;
+  opacity: .4;
+  filter: blur(8px);
+}
+.round-result-overlay::before {
+  width: 58vw; height: 58vw; max-width: 680px; max-height: 680px;
+  border: 2px solid rgba(255,255,255,.32);
+  animation: resultRing 1.9s ease-out infinite;
+}
+.round-result-overlay::after {
+  width: 36vw; height: 36vw; max-width: 430px; max-height: 430px;
+  border: 1px solid rgba(255,255,255,.18);
+  animation: resultRing 1.9s .35s ease-out infinite;
+}
+.round-result-overlay.survived {
+  background: radial-gradient(circle at 50% 42%, rgba(78,255,156,.24), transparent 34%), linear-gradient(145deg, rgba(4,36,25,.98), rgba(5,17,18,.995));
+}
+.round-result-overlay.life-hit {
+  background: radial-gradient(circle at 50% 42%, rgba(255,230,92,.34), transparent 34%), linear-gradient(145deg, rgba(74,58,4,.99), rgba(32,25,5,.995));
+}
+.round-result-overlay.eliminated {
+  background: radial-gradient(circle at 50% 42%, rgba(255,69,92,.24), transparent 34%), linear-gradient(145deg, rgba(57,8,17,.99), rgba(22,7,12,.995));
+}
+.round-result-overlay > * { position: relative; z-index: 2; }
+.round-result-burst {
+  width: 104px; height: 104px; border-radius: 50%; display: grid; place-items: center;
+  margin-bottom: 20px; font-size: 3.6rem; font-weight: 1000;
+  background: rgba(255,255,255,.1); border: 2px solid rgba(255,255,255,.34);
+  box-shadow: 0 0 55px rgba(255,255,255,.12);
+  animation: resultBurst .65s cubic-bezier(.2,1.25,.25,1) both;
+}
+.round-result-kicker { margin-bottom: 6px; font-size: .78rem; font-weight: 900; letter-spacing: .22em; opacity: .72; }
+.round-result-overlay h2 { margin: 0; max-width: 820px; font-size: clamp(2.4rem,8vw,5.5rem); line-height: .94; letter-spacing: -.045em; text-transform: uppercase; }
+.round-result-sub { margin: 14px 0 8px; max-width: 680px; font-size: clamp(1rem,3.4vw,1.35rem); color: rgba(255,255,255,.88); }
+.result-overlay-reason { max-width: 720px; margin: 8px auto 0; padding: 10px 14px; border-radius: 14px; background: rgba(0,0,0,.22); border: 1px solid rgba(255,255,255,.12); font-size: .94rem; line-height: 1.35; }
+.round-result-hearts { margin-top: 22px; font-size: clamp(2.1rem,7vw,3.2rem); letter-spacing: .12em; filter: drop-shadow(0 8px 18px rgba(0,0,0,.3)); }
+.round-result-overlay small { margin-top: 5px; font-size: .82rem; text-transform: uppercase; letter-spacing: .12em; opacity: .7; }
+@keyframes resultOverlayIn { from { opacity:0; transform:scale(1.025); } to { opacity:1; transform:scale(1); } }
+@keyframes resultBurst { 0% { opacity:0; transform:scale(.35) rotate(-12deg); } 70% { opacity:1; transform:scale(1.12) rotate(3deg); } 100% { transform:scale(1) rotate(0); } }
+@keyframes resultRing { 0% { transform:scale(.72); opacity:.38; } 100% { transform:scale(1.16); opacity:0; } }
+
+/* Participant mobile: avoid duplicate status/round/time info and hide only Players. */
+@media (max-width: 760px) {
+  body.participant-mode .status-block { display: none !important; }
+  body.participant-mode .players-card { display: none !important; }
+  body.participant-mode .grid { grid-template-columns: 1fr; }
+  body.participant-mode aside:empty { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .round-result-overlay,
+  .round-result-burst,
+  .round-result-overlay::before,
+  .round-result-overlay::after { animation: none !important; }
+}
