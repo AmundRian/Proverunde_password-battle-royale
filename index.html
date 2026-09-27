@@ -12,13 +12,13 @@
       window.addEventListener("pageshow", function (event) {
         if (!event.persisted) return;
         const url = new URL(window.location.href);
-        url.searchParams.set("_practice_build", "v10-" + Date.now());
+        url.searchParams.set("_practice_build", "v11-" + Date.now());
         window.location.replace(url.toString());
       });
     </script>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js?v=practice-mobile-between-rounds-v10"></script>
+    <script type="module" src="/src/main.js?v=practice-password-persistence-v11"></script>
   </body>
 </html>
