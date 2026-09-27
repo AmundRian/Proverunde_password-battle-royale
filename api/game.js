@@ -294,10 +294,10 @@ export default async function handler(req, res) {
       if (nextRound === 9) await redis.del(VOTES_KEY);
       for (const p of alive) {
         p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
-        // Runde 1–3 er treningsrunder med to liv. Fra runde 4 går alle
-        // gjenværende spillere over til sudden death med ett liv.
-        if (nextRound === 1 && !Number.isFinite(Number(p.lives))) p.lives = 3;
-        if (nextRound === 9) p.lives = 1;
+        // To liv gjelder gjennom hele prøverunden. Nye/eldre spillerobjekter
+        // normaliseres til maks to liv, men vi fyller aldri opp tapte liv igjen.
+        if (!Number.isFinite(Number(p.lives))) p.lives = 2;
+        p.lives = Math.min(2, Math.max(1, Number(p.lives)));
         if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
