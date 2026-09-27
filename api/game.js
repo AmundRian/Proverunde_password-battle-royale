@@ -4,7 +4,14 @@ import {
   validatePassword
 } from "./_lib/game.js";
 
-function send(res, status, body) { res.status(status).json(body); }
+function send(res, status, body) {
+  // Game state changes every few seconds. Never allow a browser/CDN to reuse
+  // an older round status, otherwise one device can remain visually "stuck".
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.status(status).json(body);
+}
 function fail(message, status = 400) { const e = new Error(message); e.statusCode = status; throw e; }
 function cleanName(v) { return String(v || "").trim().replace(/\s+/g, " ").slice(0, 48); }
 function teamSizeFromName(name) {
