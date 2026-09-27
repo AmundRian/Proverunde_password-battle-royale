@@ -12,7 +12,7 @@ body {
   min-height: 100vh;
   background:
     radial-gradient(circle at 18% 12%, rgba(124,91,255,.18), transparent 28rem),
-    radial-gradient(circle at 82% 8%, rgba(55,220,190,.10), transparent 24rem),
+    radial-gradient(circle at 82% 8%, rgba(255,78,168,.12), transparent 24rem),
     #080a12;
 }
 body::before {
@@ -20,7 +20,7 @@ body::before {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  opacity: .30;
+  opacity: .35;
   background-image: radial-gradient(#fff 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, black, transparent 75%);
@@ -62,7 +62,7 @@ h1 {
   text-transform: uppercase;
 }
 h2 { margin: 0; font-size: 1.15rem; }
-.eyebrow { color: #79e5d2; letter-spacing: .18em; font-size: .72rem; font-weight: 900; }
+.eyebrow { color: #bdb6ff; letter-spacing: .18em; font-size: .72rem; font-weight: 900; }
 .lede { color: #969db5; margin: 14px 0 0; }
 .status-block { text-align: right; display: grid; gap: 2px; }
 .status-block span, .status-block small { color: #9ca2bb; }
@@ -965,4 +965,93 @@ footer { color: #686f87; text-align: center; font-size: .75rem; padding: 24px 0 
   .round-result-burst,
   .round-result-overlay::before,
   .round-result-overlay::after { animation: none !important; }
+}
+
+
+/* --- Visual parity with the wedding game (practice V3) --- */
+.life-info {
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:12px;
+  align-items:center;
+  margin:0 0 16px;
+  padding:12px 14px;
+  border-radius:14px;
+  border:1px solid rgba(255,255,255,.13);
+  background:rgba(255,255,255,.045);
+}
+.life-info.training { border-color:rgba(245,196,90,.35); background:rgba(245,196,90,.07); }
+.life-info.sudden { border-color:rgba(255,255,255,.12); }
+.life-hearts { font-size:1.35rem; letter-spacing:.06em; white-space:nowrap; }
+.life-info strong { display:block; margin-bottom:3px; font-size:.84rem; }
+.compact-life-info { padding:12px 14px; }
+
+/* Wedding-style round results */
+.wedding-result-list { margin-top:14px; }
+.wedding-result-row { align-items:flex-start; opacity:1 !important; }
+.wedding-result-row.shortest { border-color:#a98c34; background:#25210f; }
+.result-rank { min-width:44px; font-weight:800; font-size:1.05rem; }
+.result-player-main { gap:4px; min-width:0; }
+.result-player-main > strong { white-space:normal; }
+.result-player-main > strong small { font-weight:600; color:#b9bfd2; }
+.password-result-line { display:flex; align-items:flex-start; gap:8px; min-width:0; }
+.password-result { flex:1; min-width:0; white-space:normal; overflow-wrap:anywhere; color:#d8dcef; }
+button.copy-button { flex:0 0 auto; padding:.35rem .55rem; border-radius:8px; font-size:.72rem; }
+.result-state { margin-left:auto; white-space:nowrap; }
+.result-good { color:#aaf1bd; }
+.result-bad { color:#ffc1d0; }
+.result-life { color:#ffcf89; }
+.result-gold { color:#ffe797; }
+.result-failures { white-space:normal; color:#c8cddd; }
+.star-award { display:flex; gap:10px; align-items:center; margin:12px 0; padding:10px 12px; border:1px solid rgba(255,227,138,.26); border-radius:12px; background:rgba(255,227,138,.06); }
+.star-award > span { font-size:1.3rem; }
+.star-award strong,.star-award small { display:block; }
+.star-award strong { color:#ffe38a; font-size:.82rem; }
+.star-award small { color:#c8cddd; margin-top:2px; font-size:.73rem; }
+
+/* Wedding-style final screen */
+.final-result-card { text-align:left; }
+.short-king-final { display:flex; align-items:center; gap:12px; margin-top:14px; padding:12px 14px; border:1px solid #665829; border-radius:14px; background:linear-gradient(145deg,#25200f,#16150f); }
+.short-king-final > span { font-size:2rem; }
+.short-king-final small,.short-king-final strong,.short-king-final p { display:block; margin:0; }
+.short-king-final small { color:#ffe28a; font-weight:900; letter-spacing:.1em; font-size:.7rem; }
+.short-king-final strong { margin-top:2px; font-size:1.15rem; }
+.short-king-final p { margin-top:2px; color:#c7cddd; font-size:.78rem; }
+
+/* Wedding host hierarchy */
+.host-card .actions, .host-login .actions { margin-top:10px; }
+.host-card .danger-button { width:auto; margin-top:0; }
+.host-card .mono { overflow-wrap:anywhere; }
+
+/* Exact wedding emphasis for newest rule */
+.rules li.latest-rule,
+.rules-card .rules li.latest-rule {
+  border-color:#f0c84f !important;
+  background:linear-gradient(135deg,rgba(61,49,17,.92),rgba(30,26,19,.97)) !important;
+  box-shadow:0 0 0 1px rgba(240,200,79,.22),0 0 22px rgba(240,200,79,.14) !important;
+  animation:wedding-latest-rule-pulse 2.8s ease-in-out infinite !important;
+}
+.rules li.latest-rule > span,
+.rules-card .rules li.latest-rule > span { background:#f0c84f !important; color:#1a1710 !important; }
+.rules li.latest-rule > div,
+.rules-card .rules li.latest-rule > div { color:#fff0a6 !important; animation:wedding-latest-rule-text 2.8s ease-in-out infinite !important; }
+@keyframes wedding-latest-rule-pulse {
+  0%,100% { border-color:#d8b44d; box-shadow:0 0 0 1px rgba(240,200,79,.13),0 0 10px rgba(240,200,79,.06); }
+  50% { border-color:#ffe17d; box-shadow:0 0 0 1px rgba(255,225,125,.30),0 0 25px rgba(240,200,79,.19); }
+}
+@keyframes wedding-latest-rule-text { 0%,100% { color:#f5dda0; } 50% { color:#fff6c9; } }
+
+@media (max-width:520px) {
+  .password-result-line { align-items:stretch; flex-direction:column; }
+  button.copy-button { align-self:flex-start; }
+  .wedding-result-row { display:grid; grid-template-columns:34px minmax(0,1fr); }
+  .result-rank { min-width:0; }
+  .result-state { grid-column:2; margin-left:0; }
+}
+@media (max-width:760px) {
+  body.participant-mode .compact-life-info { padding:10px 12px; gap:10px; }
+  body.participant-mode .compact-life-info .life-hearts { font-size:1.35rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rules li.latest-rule, .rules li.latest-rule > div { animation:none !important; }
 }
