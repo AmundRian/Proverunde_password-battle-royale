@@ -26,7 +26,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV8");
 localStorage.removeItem("pbrPracticeCopiedPasswordV8");
 localStorage.removeItem("pbrPracticeLastPasswordV9");
 localStorage.removeItem("pbrPracticeCopiedPasswordV9");
-document.documentElement.dataset.practiceBuild = "v10";
+document.documentElement.dataset.practiceBuild = "v11";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -449,6 +449,15 @@ function restoreInputState(saved) {
   }
 }
 
+function syncLastOwnPasswordFromState(nextState) {
+  if (!player?.id || nextState?.meta?.status !== "results") return;
+  const mine = (nextState?.roundResults?.players || []).find(p => p.id === player.id);
+  const submitted = typeof mine?.password === "string" ? mine.password : "";
+  if (!submitted) return;
+  lastOwnPassword = submitted;
+  localStorage.setItem("pbrPracticeLastPasswordV10", submitted);
+}
+
 async function refresh() {
   const seq = ++refreshSequence;
   try {
@@ -459,6 +468,7 @@ async function refresh() {
     // A host reset creates a new sessionId. As soon as a participant's phone
     // sees it, remove cached password/player/minigame data from the old test.
     syncPracticeSession(nextState);
+    syncLastOwnPasswordFromState(nextState);
 
     const changed = JSON.stringify(nextState) !== JSON.stringify(state);
     const hadError = Boolean(error);
@@ -884,7 +894,7 @@ function bind() {
 
   document.querySelector("#submit-form")?.addEventListener("submit", async e => {
     e.preventDefault();
-    const password = String(new FormData(e.currentTarget).get("practice_password_v9") || "");
+    const password = String(new FormData(e.currentTarget).get("practice_password_v10") || "");
     try {
       if (state?.meta?.round === 10) {
         throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
