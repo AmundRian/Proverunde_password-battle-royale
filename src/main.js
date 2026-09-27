@@ -636,6 +636,7 @@ function playerView() {
             id="password-input"
             class="password-input"
             name="password"
+            placeholder=""
             maxlength="200"
             value="${esc(starter)}"
             autocomplete="off"
@@ -775,10 +776,10 @@ function render() {
 
     <section class="grid">
       <div>
-        <section class="card rules-card">
+        ${hostMode || meta.status !== "results" ? `<section class="card rules-card">
           <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `${meta.round}/${state.totalRules}` : "Venter på start"}</span></div>
           ${rulesHtml()}
-        </section>
+        </section>` : ""}
 
         ${hostMode ? "" : playerView()}
         ${resultsHtml()}
