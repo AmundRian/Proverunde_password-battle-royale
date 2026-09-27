@@ -3,6 +3,8 @@ import walterImage from "./walter.png";
 
 const app = document.querySelector("#app");
 const hostMode = new URLSearchParams(location.search).get("host") === "1";
+document.body.classList.toggle("participant-mode", !hostMode);
+document.body.classList.toggle("host-mode", hostMode);
 
 let state = null;
 let error = "";
@@ -12,6 +14,8 @@ let copiedPassword = localStorage.getItem("pbrPracticeCopiedPassword") || "";
 let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
+let resultOverlayUntil = 0;
+let resultOverlayKey = "";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -196,25 +200,77 @@ function setSelectedVoteId(targetId) {
 
 function lifeHtml(self) {
   if (!self?.alive || !state?.meta?.round) return "";
-  const round = Number(state.meta.round || 0);
-  const lives = Math.max(0, Number(self.lives ?? (round <= 8 ? 3 : 1)));
-  if (round <= 8) {
-    const icons = lives >= 3 ? "❤️ ❤️ ❤️" : lives === 2 ? "❤️ ❤️ 🖤" : lives === 1 ? "❤️ 🖤 🖤" : "🖤 🖤 🖤";
-    return `<div class="life-banner training-life">
-      <strong class="life-icons">${icons}</strong>
-      <div class="life-copy">
-        <div class="life-title">Treningsliv</div>
-        <div class="life-description">Du har tre liv frem til og med runde 8. Feil koster ett liv.</div>
-      </div>
+  const lives = Math.max(0, Number(self.lives ?? 2));
+  const icons = lives >= 2 ? "❤️❤️" : lives === 1 ? "❤️🖤" : "🖤🖤";
+  return `<div class="life-banner training-life compact-life-banner">
+    <strong class="life-icons">${icons}</strong>
+    <div class="life-copy"><div class="life-title">${lives} liv igjen</div></div>
+  </div>`;
+}
+
+function currentRoundSelfResult() {
+  const self = me();
+  if (!self) return null;
+  return (state?.roundResults?.players || []).find(p => p.id === self.id) || null;
+}
+
+function resultOverlayHtml() {
+  if (hostMode || state?.meta?.status !== "results") return "";
+  if (!resultOverlayUntil || Date.now() >= resultOverlayUntil) return "";
+
+  const result = currentRoundSelfResult();
+  if (!result) return "";
+
+  const lives = Math.max(0, Number(me()?.lives ?? (result.survived ? 1 : 0)));
+  const hearts = lives >= 2 ? "❤️❤️" : lives === 1 ? "❤️🖤" : "🖤🖤";
+  const failureText = (result.failures || [])
+    .map(f => `<div class="result-overlay-reason">❌ ${esc(f)}</div>`)
+    .join("");
+  const lostLife = result.survived && result.valid === false;
+
+  if (lostLife) {
+    return `<div class="round-result-overlay life-hit">
+      <div class="round-result-burst">💔</div>
+      <div class="round-result-kicker">RUNDE ${state.meta.round}</div>
+      <h2>DU MISTET ETT LIV</h2>
+      <p class="round-result-sub">Men du er fortsatt med!</p>
+      ${failureText}
+      <div class="round-result-hearts">${hearts}</div>
+      <small>${lives} liv igjen</small>
     </div>`;
   }
-  return `<div class="life-banner sudden-life">
-    <strong class="life-icons">❤️</strong>
-    <div class="life-copy">
-      <div class="life-title">Ett liv fra runde 9</div>
-      <div class="life-description">Fra nå av er du ute hvis du ikke oppfyller rundens krav.</div>
-    </div>
+
+  if (result.survived) {
+    return `<div class="round-result-overlay survived">
+      <div class="round-result-burst">✓</div>
+      <div class="round-result-kicker">RUNDE ${state.meta.round}</div>
+      <h2>DU ER VIDERE!</h2>
+      <p class="round-result-sub">Passordet ditt bestod runden.</p>
+      <div class="round-result-hearts">${hearts}</div>
+      <small>${lives} liv igjen</small>
+    </div>`;
+  }
+
+  return `<div class="round-result-overlay eliminated">
+    <div class="round-result-burst">✕</div>
+    <div class="round-result-kicker">RUNDE ${state.meta.round}</div>
+    <h2>DU ER ELIMINERT</h2>
+    <p class="round-result-sub">Du er ute av prøverunden.</p>
+    ${failureText || `<div class="result-overlay-reason">${esc(me()?.reason || "Rundens krav ble ikke oppfylt.")}</div>`}
+    <div class="round-result-hearts">🖤🖤</div>
   </div>`;
+}
+
+function armResultOverlay(previousStatus, nextState) {
+  if (hostMode) return;
+  if (previousStatus !== "round_open" || nextState?.meta?.status !== "results") return;
+  const key = `${nextState?.meta?.sessionId || "session"}:${nextState?.meta?.round || 0}`;
+  if (key === resultOverlayKey) return;
+  resultOverlayKey = key;
+  resultOverlayUntil = Date.now() + 8000;
+  setTimeout(() => {
+    if (state?.meta?.status === "results" && Date.now() >= resultOverlayUntil) render();
+  }, 8100);
 }
 
 function voteHtml() {
@@ -389,6 +445,8 @@ async function refresh() {
 
     const changed = JSON.stringify(nextState) !== JSON.stringify(state);
     const hadError = Boolean(error);
+    const previousStatus = state?.meta?.status;
+    armResultOverlay(previousStatus, nextState);
     state = nextState;
     error = "";
 
@@ -482,7 +540,7 @@ function playersHtml() {
       return `<div class="player ${colourClass}">
         <div class="player-main">
           <strong class="player-name-line"><span>${esc(p.name)}</span>${["results","game_over"].includes(state?.meta?.status) && Number(p.stars || 0) > 0 ? `<span class="nickname-stars" title="${Number(p.stars || 0)} stjerne${Number(p.stars || 0) === 1 ? "" : "r"}">${starCountText(p.stars)}</span>` : ""}</strong>
-          <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && state.meta.round <= 8 && p.alive ? ` · ${Number(p.lives || 0) >= 3 ? "❤️❤️❤️" : Number(p.lives || 0) === 2 ? "❤️❤️🖤" : "❤️🖤🖤"}` : ""}</small>
+          <small>${roundResult?.rank === 1 && roundResult?.valid && state?.meta?.status === "results" ? "1. plass · " : ""}${esc(playerStatusText(p))}${state?.meta?.round && p.alive ? ` · ${Number(p.lives || 0) >= 2 ? "❤️❤️" : "❤️🖤"}` : ""}</small>
         </div>
         <div class="dot" title="${roundResult?.rank === 1 && roundResult?.valid ? "Førsteplass" : (p.alive ? "Med" : "Eliminert")}"></div>
       </div>`;
@@ -508,7 +566,7 @@ function resultsHtml() {
         <code>${p.password ? esc(p.password) : "—"}</code>
         <span class="length">${p.effectivePasswordLength ?? p.passwordLength ?? "—"} tegn${Number(p.teamPenalty || 0) > 0 ? ` <small>(${p.passwordLength}+${p.teamPenalty})</small>` : ""}</span>
         ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
-        ${p.lives != null && r.round <= 8 ? `<span class="result-lives">${Number(p.lives) >= 3 ? "❤️❤️❤️" : Number(p.lives) === 2 ? "❤️❤️🖤" : Number(p.lives) === 1 ? "❤️🖤🖤" : "🖤🖤🖤"}</span>` : ""}
+        ${p.lives != null ? `<span class="result-lives">${Number(p.lives) >= 2 ? "❤️❤️" : Number(p.lives) === 1 ? "❤️🖤" : "🖤🖤"}</span>` : ""}
         ${p.failures?.length ? `<div class="reason ${p.survived ? "life-reason" : ""}">${practiceFailuresHtml(p.failures)}</div>` : (p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : "")}
       </div>`).join("")}
     </div>
@@ -571,11 +629,11 @@ function playerView() {
   }
 
   if (state.meta.status === "results") {
-    const lifeLost = self.alive && state.meta.round <= 8 && self.valid === false;
+    const lifeLost = self.alive && self.valid === false;
     const myRoundResult = (state?.roundResults?.players || []).find(p => p.id === self.id);
     return `<section class="card ${self.alive ? "winner" : "danger"}">
       <h2>${lifeLost ? "❤️ Du mistet ett liv, men er fortsatt med!" : (self.alive ? `✓ Du gikk videre fra runde ${state.meta.round}` : `✕ Du ble eliminert i runde ${state.meta.round}`)}</h2>
-      <p>${self.alive ? (state.meta.round === 8 ? "Du er videre. Fra neste runde har alle bare ett liv." : "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord.") : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
+      <p>${self.alive ? "Se rundens passord nedenfor. Neste runde starter med ditt eget eller et kopiert passord." : "Dette er bare trening – hovedleken starter helt på nytt."}</p>
       ${myRoundResult?.failures?.length ? practiceFailuresHtml(myRoundResult.failures) : ""}
       ${self.alive ? lifeHtml(self) : ""}
       ${copiedPassword ? `<div class="feedback good">Neste runde starter med det kopierte passordet: <code>${esc(copiedPassword)}</code></div>` : ""}
@@ -660,6 +718,7 @@ function render() {
     </header>
 
     ${error ? `<div class="notice bad">${esc(error)}</div>` : ""}
+    ${resultOverlayHtml()}
 
     <section class="grid">
       <div>
