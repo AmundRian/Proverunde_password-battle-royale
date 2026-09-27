@@ -1056,3 +1056,17 @@ button.copy-button { flex:0 0 auto; padding:.35rem .55rem; border-radius:8px; fo
   .rules li.latest-rule, .rules li.latest-rule > div { animation:none !important; }
 }
 
+
+
+/* V8: participant parity on every viewport size.
+   Between rounds the rules card must not exist visually on phone, tablet or desktop. */
+body.participant-mode[data-game-status="results"] .rules-card,
+body.participant-between-rounds .rules-card {
+  display: none !important;
+}
+
+/* V8 safety net: participant password inputs never display instructional placeholder copy. */
+body.participant-mode #password-input::placeholder {
+  color: transparent !important;
+  opacity: 0 !important;
+}
