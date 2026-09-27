@@ -9,14 +9,19 @@ document.body.classList.toggle("host-mode", hostMode);
 let state = null;
 let error = "";
 let player = JSON.parse(localStorage.getItem("pbrPracticePlayer") || "null");
-let lastOwnPassword = localStorage.getItem("pbrPracticeLastPassword") || "";
-let copiedPassword = localStorage.getItem("pbrPracticeCopiedPassword") || "";
+let lastOwnPassword = localStorage.getItem("pbrPracticeLastPasswordV9") || "";
+let copiedPassword = localStorage.getItem("pbrPracticeCopiedPasswordV9") || "";
 let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
 let resultOverlayUntil = 0;
 let resultOverlayKey = "";
 let discardNextInputRestore = false;
+
+// V9 migration: old field/storage identities are retired completely.
+// This prevents a mobile browser from restoring text from earlier builds.
+localStorage.removeItem("pbrPracticeLastPassword");
+localStorage.removeItem("pbrPracticeCopiedPassword");
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -25,6 +30,8 @@ function clearOldPracticeSession() {
   localStorage.removeItem("pbrPracticePlayer");
   localStorage.removeItem("pbrPracticeLastPassword");
   localStorage.removeItem("pbrPracticeCopiedPassword");
+  localStorage.removeItem("pbrPracticeLastPasswordV9");
+  localStorage.removeItem("pbrPracticeCopiedPasswordV9");
 
   // Walter/egg keys include the old player id, so remove every practice key
   // in those two namespaces when a completely new game session is detected.
@@ -634,12 +641,14 @@ function playerView() {
       <form id="submit-form">
         <label>Password
           <input
-            id="password-input"
+            id="practice-password-v9"
             class="password-input"
-            name="password"
+            name="practice_password_v9"
             maxlength="200"
             value="${esc(starter)}"
-            autocomplete="new-password"
+            autocomplete="off"
+            autocapitalize="none"
+            autocorrect="off"
             spellcheck="false"
             required>
         </label>
@@ -759,8 +768,15 @@ function render() {
   // Expose the current game phase to CSS as a robust mobile fallback.
   // The rules card is also omitted from the participant DOM during results,
   // but this ensures it cannot reappear on wider/landscape phones or tablets.
+  const participantResultPhase = !hostMode && (
+    meta.status === "results" ||
+    (resultOverlayUntil > Date.now())
+  );
+  const participantActiveRound = !hostMode && meta.status === "round_open" && !participantResultPhase;
+
   document.body.dataset.gameStatus = meta.status || "";
-  document.body.classList.toggle("participant-between-rounds", !hostMode && meta.status === "results");
+  document.body.dataset.participantPhase = hostMode ? "host" : (participantActiveRound ? "active-round" : "not-active-round");
+  document.body.classList.toggle("participant-between-rounds", !hostMode && !participantActiveRound);
 
   app.innerHTML = `<main>
     <header>
@@ -782,7 +798,7 @@ function render() {
 
     <section class="grid">
       <div>
-        ${(hostMode || meta.status !== "results") ? `<section class="card rules-card">
+        ${(hostMode || participantActiveRound) ? `<section class="card rules-card">
           <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `${meta.round}/${state.totalRules}` : "Venter på start"}</span></div>
           ${rulesHtml()}
         </section>` : ""}
@@ -805,8 +821,8 @@ function render() {
   // Final participant safeguard: between rounds, remove the rules card from
   // the DOM entirely. This is intentionally not viewport-dependent, so mobile,
   // landscape phones and tablets all behave exactly like desktop participants.
-  if (!hostMode && meta.status === "results") {
-    document.querySelector(".rules-card")?.remove();
+  if (!hostMode && !participantActiveRound) {
+    document.querySelectorAll(".rules-card").forEach(el => el.remove());
   }
 
   bind();
@@ -817,10 +833,10 @@ function bind() {
   // The participant password field must never show instructional placeholder text.
   // Remove the attribute at runtime too, so an old DOM fragment or browser restore
   // cannot bring an old instructional hint back.
-  const passwordInput = document.querySelector("#password-input");
+  const passwordInput = document.querySelector("#practice-password-v9");
   if (passwordInput) {
     passwordInput.removeAttribute("placeholder");
-    passwordInput.setAttribute("autocomplete", "new-password");
+    passwordInput.setAttribute("autocomplete", "off");
   }
 
   const nicknameInput = document.querySelector("#nickname-input");
@@ -859,7 +875,7 @@ function bind() {
 
   document.querySelector("#submit-form")?.addEventListener("submit", async e => {
     e.preventDefault();
-    const password = String(new FormData(e.currentTarget).get("password") || "");
+    const password = String(new FormData(e.currentTarget).get("practice_password_v9") || "");
     try {
       if (state?.meta?.round === 10) {
         throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
@@ -878,8 +894,8 @@ function bind() {
       });
       lastOwnPassword = password;
       copiedPassword = "";
-      localStorage.setItem("pbrPracticeLastPassword", password);
-      localStorage.removeItem("pbrPracticeCopiedPassword");
+      localStorage.setItem("pbrPracticeLastPasswordV9", password);
+      localStorage.removeItem("pbrPracticeCopiedPasswordV9");
       error = "";
       if (response?.state) state = response.state;
       await refresh();
@@ -916,7 +932,7 @@ function bind() {
       // Når Walter er i mål skal deltakeren få en tydelig mulighet til å
       // redigere passordet igjen (for eksempel legge til emoji) før levering.
       setTimeout(() => {
-        const passwordInput = document.querySelector("#password-input");
+        const passwordInput = document.querySelector("#practice-password-v9");
         if (passwordInput) {
           passwordInput.scrollIntoView({ behavior: "smooth", block: "center" });
           try {
@@ -984,7 +1000,7 @@ function bind() {
         egg = { ...egg, stoppedElapsedMs: elapsed };
         saveEggState(egg);
       }
-      const passwordInput = document.querySelector("#password-input");
+      const passwordInput = document.querySelector("#practice-password-v9");
       const password = String(passwordInput?.value || "");
       if (!password) throw new Error("Skriv inn et passord før du stopper egg-tiden.");
       const response = await api({
@@ -996,8 +1012,8 @@ function bind() {
       });
       lastOwnPassword = password;
       copiedPassword = "";
-      localStorage.setItem("pbrPracticeLastPassword", password);
-      localStorage.removeItem("pbrPracticeCopiedPassword");
+      localStorage.setItem("pbrPracticeLastPasswordV9", password);
+      localStorage.removeItem("pbrPracticeCopiedPasswordV9");
       error = "";
       if (response?.state) state = response.state;
       await refresh();
@@ -1037,6 +1053,8 @@ function bind() {
       localStorage.removeItem("pbrPracticePlayer");
       localStorage.removeItem("pbrPracticeLastPassword");
       localStorage.removeItem("pbrPracticeCopiedPassword");
+      localStorage.removeItem("pbrPracticeLastPasswordV9");
+      localStorage.removeItem("pbrPracticeCopiedPasswordV9");
       if (walterStorageKey()) localStorage.removeItem(walterStorageKey());
       if (eggStorageKey()) localStorage.removeItem(eggStorageKey());
       if (voteStorageKey()) localStorage.removeItem(voteStorageKey());
@@ -1053,7 +1071,7 @@ function bind() {
 
   document.querySelectorAll(".copy-btn").forEach(btn => btn.addEventListener("click", () => {
     copiedPassword = decodeURIComponent(btn.dataset.copy || "");
-    localStorage.setItem("pbrPracticeCopiedPassword", copiedPassword);
+    localStorage.setItem("pbrPracticeCopiedPasswordV9", copiedPassword);
     btn.textContent = "Valgt til neste runde ✓";
   }));
 }

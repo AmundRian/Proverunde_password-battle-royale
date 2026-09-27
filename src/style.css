@@ -1070,3 +1070,18 @@ body.participant-mode #password-input::placeholder {
   color: transparent !important;
   opacity: 0 !important;
 }
+
+
+/* V9: participant rules exist ONLY during an actually active round.
+   This is viewport-independent and therefore identical on desktop and mobile. */
+body.participant-mode:not([data-participant-phase="active-round"]) .rules-card,
+body.participant-mode[data-participant-phase="not-active-round"] .rules-card,
+body.participant-between-rounds .rules-card {
+  display: none !important;
+}
+
+/* V9: new field identity; never show browser-restored instructional placeholder copy. */
+body.participant-mode #practice-password-v9::placeholder {
+  color: transparent !important;
+  opacity: 0 !important;
+}
