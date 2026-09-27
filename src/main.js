@@ -9,8 +9,8 @@ document.body.classList.toggle("host-mode", hostMode);
 let state = null;
 let error = "";
 let player = JSON.parse(localStorage.getItem("pbrPracticePlayer") || "null");
-let lastOwnPassword = localStorage.getItem("pbrPracticeLastPasswordV10") || "";
-let copiedPassword = localStorage.getItem("pbrPracticeCopiedPasswordV10") || "";
+let lastOwnPassword = localStorage.getItem("pbrPracticeLastPasswordV12") || "";
+let copiedPassword = localStorage.getItem("pbrPracticeCopiedPasswordV12") || "";
 let hostKey = sessionStorage.getItem("pbrPracticeHostKey") || "";
 let refreshSequence = 0;
 let appliedRefreshSequence = 0;
@@ -26,7 +26,11 @@ localStorage.removeItem("pbrPracticeLastPasswordV8");
 localStorage.removeItem("pbrPracticeCopiedPasswordV8");
 localStorage.removeItem("pbrPracticeLastPasswordV9");
 localStorage.removeItem("pbrPracticeCopiedPasswordV9");
-document.documentElement.dataset.practiceBuild = "v11";
+localStorage.removeItem("pbrPracticeLastPasswordV10");
+localStorage.removeItem("pbrPracticeCopiedPasswordV10");
+localStorage.removeItem("pbrPracticeLastPasswordV11");
+localStorage.removeItem("pbrPracticeCopiedPasswordV11");
+document.documentElement.dataset.practiceBuild = "v12";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -35,8 +39,8 @@ function clearOldPracticeSession() {
   localStorage.removeItem("pbrPracticePlayer");
   localStorage.removeItem("pbrPracticeLastPassword");
   localStorage.removeItem("pbrPracticeCopiedPassword");
-  localStorage.removeItem("pbrPracticeLastPasswordV10");
-  localStorage.removeItem("pbrPracticeCopiedPasswordV10");
+  localStorage.removeItem("pbrPracticeLastPasswordV12");
+  localStorage.removeItem("pbrPracticeCopiedPasswordV12");
 
   // Walter/egg keys include the old player id, so remove every practice key
   // in those two namespaces when a completely new game session is detected.
@@ -455,7 +459,7 @@ function syncLastOwnPasswordFromState(nextState) {
   const submitted = typeof mine?.password === "string" ? mine.password : "";
   if (!submitted) return;
   lastOwnPassword = submitted;
-  localStorage.setItem("pbrPracticeLastPasswordV10", submitted);
+  localStorage.setItem("pbrPracticeLastPasswordV12", submitted);
 }
 
 async function refresh() {
@@ -660,21 +664,21 @@ function playerView() {
       <form id="submit-form">
         <label>Password
           <input
-            id="practice-password-v10"
+            id="password-input"
             class="password-input"
-            name="practice_password_v10"
+            name="password"
             maxlength="200"
             value="${esc(starter)}"
-            autocomplete="new-password"
+            autocomplete="off"
             autocapitalize="none"
             autocorrect="off"
             spellcheck="false"
-            required>
+            >
         </label>
         ${voteHtml()}
         ${walterHtml()}
         ${eggHtml()}
-        ${state.meta.round === 10 ? "" : `<button type="submit" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Lever passord</button>`}
+        ${state.meta.round === 10 ? "" : `<button id="submit-password" type="button" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Lever passord</button>`}
       </form>
       ${self.hasSubmitted ? `<div class="feedback good">✓ Passordet er lagret. Resultatet vises når runden avsluttes.</div>` : ""}
 
@@ -852,10 +856,10 @@ function bind() {
   // The participant password field must never show instructional placeholder text.
   // Remove the attribute at runtime too, so an old DOM fragment or browser restore
   // cannot bring an old instructional hint back.
-  const passwordInput = document.querySelector("#practice-password-v10");
+  const passwordInput = document.querySelector("#password-input");
   if (passwordInput) {
     passwordInput.removeAttribute("placeholder");
-    passwordInput.setAttribute("autocomplete", "new-password");
+    passwordInput.setAttribute("autocomplete", "off");
   }
 
   const nicknameInput = document.querySelector("#nickname-input");
@@ -892,36 +896,70 @@ function bind() {
     await refresh();
   });
 
-  document.querySelector("#submit-form")?.addEventListener("submit", async e => {
-    e.preventDefault();
-    const password = String(new FormData(e.currentTarget).get("practice_password_v10") || "");
+  const submitParticipantPassword = async () => {
+    const input = document.querySelector("#password-input");
+    const password = String(input?.value || "");
+    if (!password) throw new Error("Skriv inn et passord.");
+    if (state?.meta?.round === 10) {
+      throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
+    }
+    const walterRound = state?.meta?.round === 7;
+    const completedWalterSteps = walterRound ? walterSteps() : 0;
+    if (walterRound && completedWalterSteps < 25) {
+      throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
+    }
+
+    const response = await api({
+      action: "submit",
+      playerId: player.id,
+      token: player.token,
+      password,
+      ...(walterRound ? { walterSteps: completedWalterSteps } : {})
+    });
+
+    // Persist immediately after the server confirms the submission. This is the
+    // canonical starter password for the next round unless the player copies another.
+    lastOwnPassword = password;
+    copiedPassword = "";
+    localStorage.setItem("pbrPracticeLastPasswordV12", password);
+    localStorage.removeItem("pbrPracticeCopiedPasswordV12");
+    error = "";
+    if (response?.state) state = response.state;
+    await refresh();
+  };
+
+  let submitInFlight = false;
+  const runParticipantSubmit = async () => {
+    const button = document.querySelector("#submit-password");
+    if (submitInFlight || button?.disabled) return;
+    submitInFlight = true;
+    if (button) {
+      button.disabled = true;
+      button.textContent = "Sender…";
+    }
     try {
-      if (state?.meta?.round === 10) {
-        throw new Error("I runde 10 leverer du ved å koke egget og velge «Jeg stopper tiden her».");
-      }
-      const walterRound = state?.meta?.round === 7;
-      const completedWalterSteps = walterRound ? walterSteps() : 0;
-      if (walterRound && completedWalterSteps < 25) {
-        throw new Error("Du må dytte Walter over målstreken før du kan levere i runde 7.");
-      }
-      const response = await api({
-        action: "submit",
-        playerId: player.id,
-        token: player.token,
-        password,
-        ...(walterRound ? { walterSteps: completedWalterSteps } : {})
-      });
-      lastOwnPassword = password;
-      copiedPassword = "";
-      localStorage.setItem("pbrPracticeLastPasswordV10", password);
-      localStorage.removeItem("pbrPracticeCopiedPasswordV10");
-      error = "";
-      if (response?.state) state = response.state;
-      await refresh();
+      await submitParticipantPassword();
     } catch (x) {
       error = x.message;
       render();
+    } finally {
+      submitInFlight = false;
+      const currentButton = document.querySelector("#submit-password");
+      if (currentButton && secondsLeft() !== 0 && !(state?.meta?.round === 7 && walterSteps() < 25)) {
+        currentButton.disabled = false;
+        currentButton.textContent = "Lever passord";
+      }
     }
+  };
+
+  // Mobile-safe primary path: tapping the visible button sends the live input value
+  // directly. We do not depend on browser FormData or native form validation.
+  document.querySelector("#submit-password")?.addEventListener("click", runParticipantSubmit);
+
+  // Keyboard/Enter remains supported and calls the exact same submission path.
+  document.querySelector("#submit-form")?.addEventListener("submit", e => {
+    e.preventDefault();
+    runParticipantSubmit();
   });
 
   document.querySelectorAll(".vote-row").forEach(btn => btn.addEventListener("click", async () => {
@@ -951,7 +989,7 @@ function bind() {
       // Når Walter er i mål skal deltakeren få en tydelig mulighet til å
       // redigere passordet igjen (for eksempel legge til emoji) før levering.
       setTimeout(() => {
-        const passwordInput = document.querySelector("#practice-password-v10");
+        const passwordInput = document.querySelector("#password-input");
         if (passwordInput) {
           passwordInput.scrollIntoView({ behavior: "smooth", block: "center" });
           try {
@@ -1019,7 +1057,7 @@ function bind() {
         egg = { ...egg, stoppedElapsedMs: elapsed };
         saveEggState(egg);
       }
-      const passwordInput = document.querySelector("#practice-password-v10");
+      const passwordInput = document.querySelector("#password-input");
       const password = String(passwordInput?.value || "");
       if (!password) throw new Error("Skriv inn et passord før du stopper egg-tiden.");
       const response = await api({
@@ -1031,8 +1069,8 @@ function bind() {
       });
       lastOwnPassword = password;
       copiedPassword = "";
-      localStorage.setItem("pbrPracticeLastPasswordV10", password);
-      localStorage.removeItem("pbrPracticeCopiedPasswordV10");
+      localStorage.setItem("pbrPracticeLastPasswordV12", password);
+      localStorage.removeItem("pbrPracticeCopiedPasswordV12");
       error = "";
       if (response?.state) state = response.state;
       await refresh();
@@ -1072,8 +1110,8 @@ function bind() {
       localStorage.removeItem("pbrPracticePlayer");
       localStorage.removeItem("pbrPracticeLastPassword");
       localStorage.removeItem("pbrPracticeCopiedPassword");
-      localStorage.removeItem("pbrPracticeLastPasswordV10");
-      localStorage.removeItem("pbrPracticeCopiedPasswordV10");
+      localStorage.removeItem("pbrPracticeLastPasswordV12");
+      localStorage.removeItem("pbrPracticeCopiedPasswordV12");
       if (walterStorageKey()) localStorage.removeItem(walterStorageKey());
       if (eggStorageKey()) localStorage.removeItem(eggStorageKey());
       if (voteStorageKey()) localStorage.removeItem(voteStorageKey());
@@ -1090,7 +1128,7 @@ function bind() {
 
   document.querySelectorAll(".copy-btn").forEach(btn => btn.addEventListener("click", () => {
     copiedPassword = decodeURIComponent(btn.dataset.copy || "");
-    localStorage.setItem("pbrPracticeCopiedPasswordV10", copiedPassword);
+    localStorage.setItem("pbrPracticeCopiedPasswordV12", copiedPassword);
     btn.textContent = "Valgt til neste runde ✓";
   }));
 }

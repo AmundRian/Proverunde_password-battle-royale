@@ -1,0 +1,12 @@
+V12 – robust participant password submission
+
+- Restored the simple, proven password field contract: id=password-input, name=password.
+- Explicit type=submit button with id=submit-password.
+- Submit reads the live DOM input value directly instead of depending on versioned FormData field names.
+- A single submission path persists the confirmed password for the next round.
+- Walter and egg flows reference the same password field.
+- V12 storage keys avoid stale mobile form/session state while migrating old keys away.
+- Between-round rules-card fix from V10/V11 is retained.
+- Mobile primary submit uses an explicit click handler (type=button), not native form submission.
+- Enter-key form submission calls the same shared handler.
+- Button visibly changes to "Sender…" while request is in flight.

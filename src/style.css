@@ -1081,7 +1081,7 @@ body.participant-between-rounds .rules-card {
 }
 
 /* V9: new field identity; never show browser-restored instructional placeholder copy. */
-body.participant-mode #practice-password-v10::placeholder {
+body.participant-mode #password-input::placeholder {
   color: transparent !important;
   opacity: 0 !important;
 }
