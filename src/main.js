@@ -637,10 +637,9 @@ function playerView() {
             id="password-input"
             class="password-input"
             name="password"
-            placeholder=""
             maxlength="200"
             value="${esc(starter)}"
-            autocomplete="off"
+            autocomplete="new-password"
             spellcheck="false"
             required>
         </label>
@@ -761,6 +760,7 @@ function render() {
   // The rules card is also omitted from the participant DOM during results,
   // but this ensures it cannot reappear on wider/landscape phones or tablets.
   document.body.dataset.gameStatus = meta.status || "";
+  document.body.classList.toggle("participant-between-rounds", !hostMode && meta.status === "results");
 
   app.innerHTML = `<main>
     <header>
@@ -814,6 +814,15 @@ function render() {
 }
 
 function bind() {
+  // The participant password field must never show instructional placeholder text.
+  // Remove the attribute at runtime too, so an old DOM fragment or browser restore
+  // cannot bring an old instructional hint back.
+  const passwordInput = document.querySelector("#password-input");
+  if (passwordInput) {
+    passwordInput.removeAttribute("placeholder");
+    passwordInput.setAttribute("autocomplete", "new-password");
+  }
+
   const nicknameInput = document.querySelector("#nickname-input");
   const teamHint = document.querySelector("#team-hint");
   const updateTeamHint = () => {
