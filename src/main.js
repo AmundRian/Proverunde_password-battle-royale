@@ -288,7 +288,7 @@ function armResultOverlay(previousStatus, nextState) {
   const key = `${nextState?.meta?.sessionId || "session"}:${nextState?.meta?.round || 0}`;
   if (key === resultOverlayKey) return;
   resultOverlayKey = key;
-  resultOverlayUntil = Date.now() + 8000;
+  resultOverlayUntil = Date.now() + 6000;
   setTimeout(() => {
     if (state?.meta?.status === "results" && Date.now() >= resultOverlayUntil) render();
   }, 8100);
