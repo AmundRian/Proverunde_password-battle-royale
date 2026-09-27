@@ -167,6 +167,24 @@ input:focus { border-color: #8074db; box-shadow: 0 0 0 3px rgba(128,116,219,.16)
 form { display: grid; gap: 10px; }
 form label { margin: 0; }
 .password-input { font-size: 20px; line-height: 1.25; }
+
+.password-input { transition: font-size .08s linear; }
+.password-full-preview {
+  display: none;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid #353b52;
+  background: #101421;
+  color: #dfe3f3;
+  font-size: 14px;
+  line-height: 1.35;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.password-full-preview.visible { display: block; }
 .countdown { font-size: 1.7rem; font-weight: 900; font-variant-numeric: tabular-nums; }
 
 .feedback { margin-top: 12px; padding: 10px 12px; border-radius: 11px; font-weight: 800; }

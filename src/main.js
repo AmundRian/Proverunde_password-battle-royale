@@ -675,6 +675,7 @@ function playerView() {
             spellcheck="false"
             >
         </label>
+        <div id="password-full-preview" class="password-full-preview" aria-live="polite"></div>
         ${voteHtml()}
         ${walterHtml()}
         ${eggHtml()}
@@ -764,6 +765,36 @@ function hostView() {
     <div class="actions"><button id="reset" class="danger-button">Reset entire game</button></div>
     <p class="muted tiny">Player link: <span class="mono">${esc(location.origin + location.pathname)}</span></p>
   </section>`;
+}
+
+function fitParticipantPasswordInput(input) {
+  if (!(input instanceof HTMLInputElement)) return;
+  const maxPx = 20;
+  const minPx = 16;
+  input.style.fontSize = `${maxPx}px`;
+  const available = Math.max(1, input.clientWidth - 16);
+  const needed = Math.max(1, input.scrollWidth - 16);
+  if (needed > available) {
+    const fitted = Math.max(minPx, Math.min(maxPx, maxPx * available / needed));
+    input.style.fontSize = `${fitted.toFixed(2)}px`;
+  }
+}
+
+function setupParticipantPasswordDisplay() {
+  const input = document.querySelector("#password-input");
+  if (!(input instanceof HTMLInputElement)) return;
+  const update = () => {
+    fitParticipantPasswordInput(input);
+    const preview = document.querySelector("#password-full-preview");
+    if (!(preview instanceof HTMLElement)) return;
+    const value = String(input.value || "");
+    preview.textContent = value;
+    const overflows = input.scrollWidth > input.clientWidth + 2;
+    preview.classList.toggle("visible", Boolean(value) && overflows);
+  };
+  input.addEventListener("input", update);
+  window.addEventListener("resize", update, { passive: true });
+  requestAnimationFrame(update);
 }
 
 function render() {
@@ -861,6 +892,7 @@ function bind() {
     passwordInput.removeAttribute("placeholder");
     passwordInput.setAttribute("autocomplete", "off");
   }
+  setupParticipantPasswordDisplay();
 
   const nicknameInput = document.querySelector("#nickname-input");
   const teamHint = document.querySelector("#team-hint");
