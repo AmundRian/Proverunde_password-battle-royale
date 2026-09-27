@@ -88,12 +88,13 @@ function statusText(s) {
 async function api(body = null) {
   const res = await fetch("/api/game", body ? {
     method: "POST",
+    cache: "no-store",
     headers: {
       "Content-Type": "application/json",
       ...(hostKey ? { "X-Host-Key": hostKey } : {})
     },
     body: JSON.stringify(body)
-  } : {});
+  } : { cache: "no-store" });
 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Feil (${res.status})`);
@@ -756,6 +757,11 @@ function render() {
   const total = state.players.length;
   const meta = state.meta;
 
+  // Expose the current game phase to CSS as a robust mobile fallback.
+  // The rules card is also omitted from the participant DOM during results,
+  // but this ensures it cannot reappear on wider/landscape phones or tablets.
+  document.body.dataset.gameStatus = meta.status || "";
+
   app.innerHTML = `<main>
     <header>
       <div>
@@ -776,7 +782,7 @@ function render() {
 
     <section class="grid">
       <div>
-        ${hostMode || meta.status !== "results" ? `<section class="card rules-card">
+        ${(hostMode || meta.status !== "results") ? `<section class="card rules-card">
           <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `${meta.round}/${state.totalRules}` : "Venter på start"}</span></div>
           ${rulesHtml()}
         </section>` : ""}
@@ -795,6 +801,13 @@ function render() {
     </section>
 
   </main>`;
+
+  // Final participant safeguard: between rounds, remove the rules card from
+  // the DOM entirely. This is intentionally not viewport-dependent, so mobile,
+  // landscape phones and tablets all behave exactly like desktop participants.
+  if (!hostMode && meta.status === "results") {
+    document.querySelector(".rules-card")?.remove();
+  }
 
   bind();
   restoreInputState(inputState);
