@@ -1081,7 +1081,12 @@ body.participant-between-rounds .rules-card {
 }
 
 /* V9: new field identity; never show browser-restored instructional placeholder copy. */
-body.participant-mode #practice-password-v9::placeholder {
+body.participant-mode #practice-password-v10::placeholder {
   color: transparent !important;
   opacity: 0 !important;
 }
+
+
+/* V10 structural participant guard: only the rule card embedded inside the active-round player view may display. */
+body.participant-mode .rules-card:not(.participant-active-rules-card) { display:none !important; }
+body.participant-mode:not([data-participant-phase="active-round"]) .participant-active-rules-card { display:none !important; }

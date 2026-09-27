@@ -1,0 +1,7 @@
+Practice mobile fix V10
+
+- Participant rule overview is structurally embedded only in the active-round player view.
+- No participant rule card exists in the global layout between rounds.
+- Vercel serves all app content with no-store/no-cache headers.
+- BFCache-restored mobile pages force a fresh navigation.
+- Participant password field has a new identity and no instructional placeholder.

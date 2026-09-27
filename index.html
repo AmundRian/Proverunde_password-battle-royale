@@ -4,10 +4,21 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#11152b" />
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
     <title>Prøverunde – Passordleken</title>
+      <script>
+      window.addEventListener("pageshow", function (event) {
+        if (!event.persisted) return;
+        const url = new URL(window.location.href);
+        url.searchParams.set("_practice_build", "v10-" + Date.now());
+        window.location.replace(url.toString());
+      });
+    </script>
   </head>
   <body>
     <div id="app"></div>
-    <script type="module" src="/src/main.js?v=practice-mobile-between-rounds-v9"></script>
+    <script type="module" src="/src/main.js?v=practice-mobile-between-rounds-v10"></script>
   </body>
 </html>
