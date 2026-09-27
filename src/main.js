@@ -16,6 +16,7 @@ let refreshSequence = 0;
 let appliedRefreshSequence = 0;
 let resultOverlayUntil = 0;
 let resultOverlayKey = "";
+let discardNextInputRestore = false;
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -46,6 +47,9 @@ function syncPracticeSession(nextState) {
 
   if (storedSessionId !== sessionId) {
     clearOldPracticeSession();
+    // A full host reset starts a genuinely new game. Do not restore whatever
+    // text happened to be focused in the old session (for example a nickname).
+    if (!hostMode) discardNextInputRestore = true;
     localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
   }
 }
@@ -636,8 +640,7 @@ function playerView() {
             value="${esc(starter)}"
             autocomplete="off"
             spellcheck="false"
-            required
-            placeholder="Bygg et passord som følger alle reglene">
+            required>
         </label>
         ${voteHtml()}
         ${walterHtml()}
@@ -731,8 +734,11 @@ function hostView() {
 }
 
 function render() {
-  // Capture HERE, after any API wait has already finished.
-  const inputState = captureInputState();
+  // Capture HERE, after any API wait has already finished. A full game reset
+  // deliberately discards the focused field so old names/passwords cannot
+  // bleed into the new session.
+  const inputState = discardNextInputRestore ? null : captureInputState();
+  discardNextInputRestore = false;
 
   if (!state) {
     app.innerHTML = `<main>
