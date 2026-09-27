@@ -57,7 +57,7 @@ function publicState(meta, players) {
       reason: reveal ? p.reason || null : null,
       walterRound: p.walterRound ?? null,
       walterSteps: Number(p.walterSteps || 0),
-      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 3,
+      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2,
       stars: Math.max(0, Number(p.stars || 0)),
       teamSize: Math.max(1, Number(p.teamSize || 1)),
       teamPenalty: teamPenalty(p)
@@ -140,7 +140,7 @@ export default async function handler(req, res) {
       const claimed = await redis.hsetnx(NAMES_KEY, key, id);
       if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
       const teamSize = teamSizeFromName(name);
-      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 3, stars: 0 };
+      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
       await savePlayer(redis, p);
       const players = await getPlayers(redis);
       return send(res, 200, { player: { id, name, token, teamSize }, state: publicState(meta, players) });
@@ -352,21 +352,15 @@ export default async function handler(req, res) {
         p.reason = reason;
 
         if (!p.valid) {
-          if (meta.round <= 8) {
-            const currentLives = Math.max(1, Number(p.lives || 3));
-            p.lives = currentLives - 1;
-            if (p.lives <= 0) {
-              p.alive = false;
-              p.eliminatedRound = meta.round;
-              p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ditt siste liv.`;
-            } else {
-              p.alive = true;
-              p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ett liv, men er fortsatt med.`;
-            }
-          } else {
-            p.lives = 0;
+          const currentLives = Math.max(1, Number(p.lives || 2));
+          p.lives = currentLives - 1;
+          if (p.lives <= 0) {
             p.alive = false;
             p.eliminatedRound = meta.round;
+            p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ditt siste liv.`;
+          } else {
+            p.alive = true;
+            p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ett liv, men er fortsatt med.`;
           }
         }
         await savePlayer(redis, p);
