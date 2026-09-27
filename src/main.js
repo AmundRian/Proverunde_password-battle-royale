@@ -199,12 +199,12 @@ function setSelectedVoteId(targetId) {
 }
 
 function lifeHtml(self) {
-  if (!self?.alive || !state?.meta?.round) return "";
-  const lives = Math.max(0, Number(self.lives ?? 2));
-  const icons = lives >= 2 ? "❤️❤️" : lives === 1 ? "❤️🖤" : "🖤🖤";
-  return `<div class="life-banner training-life compact-life-banner">
-    <strong class="life-icons">${icons}</strong>
-    <div class="life-copy"><div class="life-title">${lives} liv igjen</div></div>
+  if (!self?.alive || state?.meta?.status !== "round_open") return "";
+  const lives = Math.max(1, Number(self.lives ?? 2));
+  const hearts = lives >= 2 ? "❤️❤️" : "❤️🖤";
+  return `<div class="life-info ${lives >= 2 ? "training" : "sudden"} compact-life-info">
+    <div class="life-hearts">${hearts}</div>
+    <div><strong>${lives} liv igjen</strong></div>
   </div>`;
 }
 
@@ -552,23 +552,48 @@ function resultsHtml() {
   const r = state?.roundResults;
   if (!r) return "";
 
+  const finalRound = r.round >= state.totalRules && state.meta.status === "game_over";
+  const winners = new Set(state.meta.winners || []);
+
   return `<section class="card results-card">
     <div class="card-title">
       <h2>Passordrangering · runde ${r.round}</h2>
       <span>${r.remaining} videre</span>
     </div>
-    <p class="muted tiny">Passordene vises først når runden er avsluttet. Trykk <b>Kopier</b> hvis du vil bruke et annet passord som utgangspunkt i neste runde.</p>
-    ${r.starWinners?.length ? `<div class="star-round-banner"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${esc(r.starWinners.map(w => w.name).join(" & "))} · ${r.shortestPasswordLength} tegn${r.starWinners.some(w => Number(w.teamPenalty || 0) > 0) ? " (inkl. lagtillegg)" : ""}</small></div></div>` : ""}
-    <div class="result-list">
-      ${r.players.map(p => `<div class="result-row ${p.rank === 1 && p.valid ? "first-place" : (p.survived ? "survived" : "eliminated")}">
-        <div class="rank">#${p.rank}</div>
-        <div class="who"><strong class="result-name-line"><span>${esc(p.name)}</span>${Number(p.stars || 0) > 0 ? `<span class="nickname-stars">${starCountText(p.stars)}</span>` : ""}</strong><small>${p.survived ? "Videre" : "Eliminert"}${p.starEarned ? " · ⭐ kortest" : ""}</small></div>
-        <code>${p.password ? esc(p.password) : "—"}</code>
-        <span class="length">${p.effectivePasswordLength ?? p.passwordLength ?? "—"} tegn${Number(p.teamPenalty || 0) > 0 ? ` <small>(${p.passwordLength}+${p.teamPenalty})</small>` : ""}</span>
-        ${p.password ? `<button type="button" class="secondary copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
-        ${p.lives != null ? `<span class="result-lives">${Number(p.lives) >= 2 ? "❤️❤️" : Number(p.lives) === 1 ? "❤️🖤" : "🖤🖤"}</span>` : ""}
-        ${p.failures?.length ? `<div class="reason ${p.survived ? "life-reason" : ""}">${practiceFailuresHtml(p.failures)}</div>` : (p.reason ? `<div class="reason ${p.survived ? "life-reason" : ""}">${esc(p.reason)}</div>` : "")}
-      </div>`).join("")}
+    <p class="muted tiny">Spillere som gikk videre vises før eliminerte, og innen hver gruppe rangeres kortere passord først. Trykker du «Kopier», blir det valgte passordet utgangspunktet ditt i neste runde.</p>
+    ${r.starWinners?.length ? `<div class="star-award"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${r.starWinners.map(w => `${esc(w.name)} · ${w.effectivePasswordLength ?? w.passwordLength} tegn`).join(" & ")}</small></div></div>` : ""}
+
+    <div class="players wedding-result-list">
+      ${r.players.map(p => {
+        const isWinner = finalRound && winners.has(p.name);
+        const gotStar = Boolean(p.starEarned);
+        const lostLife = p.survived && p.valid === false;
+        const rankText = p.rank ? `#${p.rank}` : "—";
+        const lengthText = p.passwordLength != null
+          ? `${p.effectivePasswordLength ?? p.passwordLength} tegn${Number(p.teamPenalty || 0) > 0 ? ` (${p.passwordLength} + ${p.teamPenalty} lag)` : ""}`
+          : "Ingen innsending";
+        const resultText = isWinner
+          ? "🏆 Vinner"
+          : lostLife
+            ? "❤️ Mistet ett liv"
+            : gotStar
+              ? "⭐ Kortest"
+              : (p.survived ? (finalRound ? "✓ Fullførte" : "✓ Videre") : "✕ Ute");
+        const resultClass = isWinner || gotStar ? "result-gold" : (lostLife ? "result-life" : (p.survived ? "result-good" : "result-bad"));
+
+        return `<div class="player ${p.survived ? "alive" : "dead"} ${gotStar ? "shortest" : ""} wedding-result-row">
+          <div class="result-rank">${rankText}</div>
+          <div class="player-main result-player-main">
+            <strong>${esc(p.name)} ${Number(p.stars || 0) > 0 ? `<span class="nickname-stars">${starCountText(p.stars)}</span>` : ""} <small>· ${esc(lengthText)}</small></strong>
+            <div class="password-result-line">
+              <small class="mono password-result">${p.password ? esc(p.password) : "Ingen innsending"}</small>
+              ${p.password ? `<button type="button" class="secondary copy-button copy-btn" data-copy="${encodeURIComponent(p.password)}">Kopier</button>` : ""}
+            </div>
+            ${hostMode && p.failures?.length ? `<small class="result-failures">${p.failures.map(f => esc(f)).join("<br>")}</small>` : ""}
+          </div>
+          <strong class="result-state ${resultClass}">${resultText}</strong>
+        </div>`;
+      }).join("")}
     </div>
   </section>`;
 }
@@ -641,12 +666,33 @@ function playerView() {
   }
 
   if (state.meta.status === "game_over") {
+    const winners = state.meta.winners || [];
+    const won = winners.includes(self.name);
     const shortKing = shortKingData();
-    return `<section class="card winner finish">
-      <h2>Prøverunden er over 🎉</h2>
-      <p>Nå kjenner du flyten: skriv → send → vent → se resultat → eventuelt kopier.</p>
-      ${state.meta.winners?.length ? `<div class="winner-box"><small>🏆 VINNER</small><b>${esc(state.meta.winners.join(" & "))}</b></div>` : ""}
-      ${shortKing.winners.length ? `<div class="short-king-box"><small>⭐ THE SHORT KING${shortKing.winners.length > 1 ? "S" : ""}</small><b>${esc(shortKing.winners.map(p => p.name).join(" & "))}</b><span>${shortKing.maxStars} stjerne${shortKing.maxStars === 1 ? "" : "r"}</span></div>` : ""}
+    const shortKingText = shortKing.winners.length
+      ? `<div class="short-king-final"><span>⭐</span><div><small>THE SHORT KING${shortKing.winners.length > 1 ? "S" : ""}</small><strong>${esc(shortKing.winners.map(p => p.name).join(" & "))}</strong><p>${shortKing.maxStars} stjerne${shortKing.maxStars === 1 ? "" : "r"}</p></div></div>`
+      : "";
+
+    if (won) {
+      return `<section class="card winner final-result-card">
+        <h2>🏆 Du vant!</h2>
+        <p>Du kom gjennom hele prøverunden${state.meta.winnerLength ? ` med et vinnende passord på <strong>${state.meta.winnerLength} tegn</strong>` : ""}.</p>
+        ${shortKingText}
+      </section>`;
+    }
+
+    if (self.alive) {
+      return `<section class="card final-result-card">
+        <h2>Du fullførte hele prøverunden!</h2>
+        <p>${state.meta.winnerLength ? `Vinnerpassordet var på <strong>${state.meta.winnerLength} tegn</strong>.` : "Prøverunden er ferdig."}</p>
+        ${shortKingText}
+      </section>`;
+    }
+
+    return `<section class="card danger final-result-card">
+      <h2>Game over</h2>
+      <p>Prøverunden er ferdig. Du kan fortsatt se resultatene nedenfor.</p>
+      ${shortKingText}
     </section>`;
   }
 
@@ -655,13 +701,14 @@ function playerView() {
 
 function hostView() {
   if (!hostKey) {
-    return `<section class="card host-login">
-      <div class="card-title"><h2>Host controls</h2><span>låst</span></div>
+    return `<section class="card host host-login">
+      <div class="eyebrow">HOST CONTROLS</div>
+      <h2 style="margin:.35rem 0 14px;">Låst</h2>
       <form id="host-login">
-        <label>HOST_KEY
-          <input name="key" type="password" autocomplete="off" required>
+        <label>Host key
+          <input name="key" type="password" autocomplete="off" required placeholder="Same as HOST_KEY in Vercel">
         </label>
-        <button>Åpne hostkontrollene</button>
+        <div class="actions"><button>Åpne hostkontrollene</button></div>
       </form>
     </section>`;
   }
@@ -669,17 +716,17 @@ function hostView() {
   const alive = state?.players?.filter(p => p.alive).length || 0;
   const round = state?.meta?.round || 0;
 
-  return `<section class="card host-card">
-    <div class="card-title"><h2>Host controls</h2><span>${alive} aktive</span></div>
+  return `<section class="card host host-card">
+    <div class="eyebrow">HOST CONTROLS</div>
+    <h2 style="margin:.35rem 0 14px;">Prøverunden</h2>
     ${state.meta.status === "round_open" ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
-    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `<div class="host-start">
-      <label>Rundetid (sek)
-        <input id="round-seconds" type="number" min="10" max="300" value="${state.meta.roundSeconds || 60}">
-      </label>
-      <button id="start-round">${round === 0 ? "Start prøverunden" : "Start neste runde"}</button>
-    </div>` : ""}
-    ${state.meta.status === "round_open" ? `<button id="close-round">Avslutt runden nå</button>` : ""}
-    <button id="reset" class="danger-button">Nullstill prøverunden</button>
+    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `<label>Rundetid for runde ${Math.min(round + 1, state.totalRules)} (sekunder)
+      <input id="round-seconds" type="number" min="10" max="300" value="${state.meta.roundSeconds || 60}">
+    </label>
+    <div class="actions"><button id="start-round">${round === 0 ? "Start game" : "Start next round"}</button></div>` : ""}
+    ${state.meta.status === "round_open" ? `<div class="actions"><button id="close-round">Close round now</button></div>` : ""}
+    <div class="actions"><button id="reset" class="danger-button">Reset entire game</button></div>
+    <p class="muted tiny">Player link: <span class="mono">${esc(location.origin + location.pathname)}</span></p>
   </section>`;
 }
 
@@ -690,7 +737,7 @@ function render() {
   if (!state) {
     app.innerHTML = `<main>
       <header>
-        <div><div class="eyebrow">TRYGG PRØVERUNDE</div><h1>Password<br>Battle Royale</h1></div>
+        <div><h1>Password<br>Battle Royale</h1></div>
       </header>
       <div class="card"><p>${esc(error || "Laster…")}</p></div>
     </main>`;
@@ -705,7 +752,6 @@ function render() {
   app.innerHTML = `<main>
     <header>
       <div>
-        <div class="eyebrow">TRYGG PRØVERUNDE</div>
         <h1>Password<br>Battle Royale</h1>
       </div>
       <div class="status-block">
@@ -718,12 +764,13 @@ function render() {
     </header>
 
     ${error ? `<div class="notice bad">${esc(error)}</div>` : ""}
+    ${meta.status === "game_over" && (meta.winners || []).length ? `<div class="hero-winner">🏆 Vinner${meta.winners.length > 1 ? "e" : ""}: ${meta.winners.map(esc).join(", ")}${meta.winnerLength ? ` · ${meta.winnerLength} tegn` : ""}</div>` : ""}
     ${resultOverlayHtml()}
 
     <section class="grid">
       <div>
         <section class="card rules-card">
-          <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `Runde ${meta.round} av ${state.totalRules}` : "Venter på start"}</span></div>
+          <div class="card-title"><h2>Regler</h2><span class="round-progress-pill">${meta.round ? `${meta.round}/${state.totalRules}` : "Venter på start"}</span></div>
           ${rulesHtml()}
         </section>
 
