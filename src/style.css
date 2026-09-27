@@ -1056,11 +1056,3 @@ button.copy-button { flex:0 0 auto; padding:.35rem .55rem; border-radius:8px; fo
   .rules li.latest-rule, .rules li.latest-rule > div { animation:none !important; }
 }
 
-
-/* V6 mobile safeguard: participants must not see the rules card between rounds.
-   Use a wider mobile/tablet breakpoint so landscape phones are covered too. */
-@media (max-width: 1024px) {
-  body.participant-mode[data-game-status="results"] .rules-card {
-    display: none !important;
-  }
-}
