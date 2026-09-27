@@ -1,0 +1,8 @@
+Practice mobile between-rounds fix V7
+
+- Participant rule card is omitted and force-removed from the DOM whenever status=results.
+- The behavior is viewport-independent: phone, landscape phone, tablet and desktop participant all match.
+- API GET/POST requests use cache:no-store.
+- API responses send explicit no-store/no-cache headers.
+- Frontend module query version bumped to force clients to fetch the updated code.
+- Host rule card remains visible between rounds.

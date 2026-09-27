@@ -1,0 +1,9 @@
+Prøverunde – oppdatering for visuell/funksjonell likhet med bryllupsleken
+
+- 2 liv fra start og gjennom hele prøverunden (vanlige regelbrudd koster ett liv).
+- Fullskjerms resultatbeskjed i ca. 8 sekunder: videre / mistet ett liv / eliminert.
+- Liv-visning forenklet til hjerter + antall liv igjen.
+- Deltakere på mobil ser ikke den doble toppstatusen med runde/status/timer.
+- Players-kortet skjules for deltakere på mobil, uten å skjule innmeldingsskjemaet.
+- Den lange passord-advarselen på startsiden var allerede fraværende i denne versjonen.
+- Prøverundens spesialmekanikker (Walter, avstemning, egg/finale) er beholdt.

@@ -1,0 +1,5 @@
+Prøverunde V4 – reset/input-fiks
+
+- Full host-reset starter en ny spilløkt og gamle navn/passord gjenopprettes ikke i inputfeltene.
+- Fikser tilfelle der et aktivt navn (f.eks. «Vetle») kunne bli visuelt lagt tilbake etter reset.
+- Fjernet placeholder-teksten «Bygg et passord som følger alle reglene» fra deltakerens passordfelt.

@@ -1,0 +1,13 @@
+Prøverunde – visuell parity med bryllupsleken (V3)
+
+Oppdatert:
+- Fjernet «TRYGG PRØVERUNDE».
+- Grunnfarger/aksent bakgrunn matcher bryllupsleken.
+- Rundeindikator viser X/Y.
+- Hjerte/liv-visning matcher bryllupsleken.
+- Resultatlisten bruker bryllupslekens kompakte spiller-rad-layout.
+- Sluttskjermen bruker bryllupslekens kort/vinnerstil.
+- Hostkontrollene bruker bryllupslekens visuelle hierarki.
+- Nyeste regel har samme sterke gule/pulserende markering som bryllupsleken.
+
+Prøverundens egne regler og spesialoppgaver er beholdt.

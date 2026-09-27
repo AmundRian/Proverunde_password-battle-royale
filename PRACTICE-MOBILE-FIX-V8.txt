@@ -1,0 +1,7 @@
+V8 correction
+
+- Rules card is hidden for participants during results/between-rounds on ALL viewport sizes.
+- Participant password field has no placeholder attribute; runtime removes any stale placeholder too.
+- Password autocomplete uses new-password.
+- 2 lives remain in force throughout the practice game; stale sudden-death override removed.
+- Frontend entry version bumped to V8.

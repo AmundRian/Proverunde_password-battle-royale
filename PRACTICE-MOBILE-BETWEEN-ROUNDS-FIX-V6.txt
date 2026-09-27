@@ -1,0 +1,6 @@
+PRØVERUNDE – MOBILFIKS V6
+
+- Regelkortet skjules for deltakere mellom rundene også på mobil/landscape/tablet.
+- Hosten beholder regelkortet.
+- Mobilregelen bruker spillstatus som ekstra sikkerhet i tillegg til at kortet fjernes fra deltaker-DOM i resultatfasen.
+- Innmelding, Players-skjuling og øvrig mobilvisning er beholdt.

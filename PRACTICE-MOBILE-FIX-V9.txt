@@ -1,0 +1,7 @@
+Prøverunde V9 – mobil/mellomrunde-fiks
+
+- Deltakerens regelkort rendres nå KUN når en aktiv runde faktisk er åpen.
+- Resultat-/mellomfase skjuler regelkortet uavhengig av skjermstørrelse.
+- Passordfeltet har fått ny id/name og autocomplete=off for å bryte gammel mobil-formrestore.
+- Gamle lagringsnøkler brukes ikke for passordfeltet.
+- Kjente gamle instruksjonstekster blir filtrert bort dersom de finnes som lagret verdi.

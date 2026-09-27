@@ -1,0 +1,6 @@
+Prøverunde – mellomrunde/UI-fiks V5
+
+- Deltakere ser ikke lenger regelkortet mellom rundene (results-status).
+- Hosten beholder regelkortet mellom rundene.
+- Alle placeholder-tekster er fjernet fra deltakerens passordfelt.
+- Tidligere reset-fiks og øvrige V4-endringer er beholdt.
