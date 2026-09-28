@@ -1,0 +1,8 @@
+Prøverunde V16 – 5 runder
+
+- Beholder kun opprinnelig runde 1–5.
+- Fjerner runde 6–10 fra aktivt regelsett.
+- Rundeindikator og host-flyt bruker nå 5 totalrunder.
+- Runde 5 avsluttes normalt av hosten og avslutter prøverunden.
+- Den gamle «første gyldige vinner umiddelbart»-finalelogikken aktiveres ikke i runde 5.
+- Ny Redis-namespace v6 gir en ren spilløkt etter deploy og unngår gammel 10-runders state.

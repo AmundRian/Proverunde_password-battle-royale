@@ -220,7 +220,7 @@ export default async function handler(req, res) {
       // Round 10 is a race: the first player to submit a password that follows
       // every active rule wins immediately. Invalid attempts remain spoiler-free
       // and may be replaced until someone wins or the host closes the round.
-      if (meta.round === RULES.length) {
+      if (RULES[meta.round - 1]?.id === "firstWins") {
         const check = validatePassword(password, meta.round);
         if (check.valid) {
           const claim = await redis.set(WINNER_KEY, JSON.stringify({ id: p.id, name: p.name, submittedAt: p.submittedAt, password }), { nx: true });
@@ -302,7 +302,7 @@ export default async function handler(req, res) {
         if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
         await savePlayer(redis, p);
       }
-      if (nextRound === RULES.length) await redis.del(WINNER_KEY);
+      if (RULES[nextRound - 1]?.id === "firstWins") await redis.del(WINNER_KEY);
       const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
       const roundStartsAt = Date.now() + 2000;
       meta = await setMeta(redis, {
@@ -442,7 +442,7 @@ export default async function handler(req, res) {
       const finals = await getPlayers(redis);
       const result = buildRoundResult(meta.round, starters, finals, starWinnerIds);
       const history = [...(meta.roundHistory || []), result];
-      const alive = finals.filter(p => p.alive && p.submission);
+      const alive = finals.filter(p => p.alive && p.valid === true && p.submission);
       const lastRound = meta.round >= RULES.length;
       let winners = [], winnerLength = null;
       if (lastRound && alive.length) {
