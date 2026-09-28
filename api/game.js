@@ -180,6 +180,7 @@ export default async function handler(req, res) {
 
     if (body.action === "submit") {
       if (meta.status !== "round_open") fail("Runden er ikke åpen.", 409);
+      if (meta.roundStartsAt && Date.now() < meta.roundStartsAt) fail("Runden starter om et øyeblikk.", 409);
       if (meta.deadline && Date.now() > meta.deadline) fail("Tiden er ute. Vent på at hosten avslutter runden.", 409);
       const p = await getPlayer(redis, body.playerId);
       if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
@@ -303,9 +304,10 @@ export default async function handler(req, res) {
       }
       if (nextRound === RULES.length) await redis.del(WINNER_KEY);
       const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
+      const roundStartsAt = Date.now() + 2000;
       meta = await setMeta(redis, {
         ...meta, status: "round_open", round: nextRound, roundSeconds: seconds,
-        deadline: Date.now() + seconds*1000, winners: [], winnerLength: null, lastRound: null
+        roundStartsAt, deadline: Date.now() + (seconds + 4)*1000, winners: [], winnerLength: null, lastRound: null
       });
       return send(res, 200, { ok: true, meta });
     }
