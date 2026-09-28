@@ -16,6 +16,9 @@ let refreshSequence = 0;
 let appliedRefreshSequence = 0;
 let resultOverlayUntil = 0;
 let resultOverlayKey = "";
+let roundIntroKey = "";
+let roundIntroUntil = 0;
+let participantRoundDeadline = 0;
 let discardNextInputRestore = false;
 
 // V9 migration: old field/storage identities are retired completely.
@@ -121,10 +124,42 @@ function me() {
   return state?.players?.find(p => p.id === player?.id) || null;
 }
 
+function currentRoundKey(nextState = state) {
+  return `${nextState?.meta?.sessionId || "session"}:${nextState?.meta?.round || 0}`;
+}
+
+function armRoundIntro(previousStatus, previousRound, nextState) {
+  if (hostMode || previousStatus == null || nextState?.meta?.status !== "round_open") return;
+  if (previousStatus === "round_open" && previousRound === nextState.meta.round) return;
+  const key = currentRoundKey(nextState);
+  if (key === roundIntroKey) return;
+  roundIntroKey = key;
+  roundIntroUntil = Date.now() + 2000;
+  participantRoundDeadline = roundIntroUntil + Number(nextState?.meta?.roundSeconds || 60) * 1000;
+  setTimeout(() => {
+    if (currentRoundKey() === key && state?.meta?.status === "round_open") render();
+  }, 2050);
+}
+
+function roundIntroActive() {
+  return !hostMode && state?.meta?.status === "round_open" && currentRoundKey() === roundIntroKey && Date.now() < roundIntroUntil;
+}
+
+function roundStartOverlayHtml() {
+  if (!roundIntroActive()) return "";
+  return `<div class="round-start-overlay" role="status" aria-live="assertive">
+    <div>Runde ${state.meta.round}/${state.totalRules}</div>
+  </div>`;
+}
+
 function secondsLeft() {
-  return state?.meta?.deadline
-    ? Math.max(0, Math.ceil((state.meta.deadline - Date.now()) / 1000))
-    : null;
+  if (!state?.meta?.deadline) return null;
+  const full = Number(state?.meta?.roundSeconds || 60);
+  if (roundIntroActive()) return full;
+  if (!hostMode && currentRoundKey() === roundIntroKey && participantRoundDeadline) {
+    return Math.max(0, Math.ceil((participantRoundDeadline - Date.now()) / 1000));
+  }
+  return Math.min(full, Math.max(0, Math.ceil((state.meta.deadline - Date.now()) / 1000)));
 }
 
 function walterStorageKey() {
@@ -288,10 +323,10 @@ function armResultOverlay(previousStatus, nextState) {
   const key = `${nextState?.meta?.sessionId || "session"}:${nextState?.meta?.round || 0}`;
   if (key === resultOverlayKey) return;
   resultOverlayKey = key;
-  resultOverlayUntil = Date.now() + 6000;
+  resultOverlayUntil = Date.now() + 4000;
   setTimeout(() => {
     if (state?.meta?.status === "results" && Date.now() >= resultOverlayUntil) render();
-  }, 8100);
+  }, 4100);
 }
 
 function voteHtml() {
@@ -476,8 +511,10 @@ async function refresh() {
 
     const changed = JSON.stringify(nextState) !== JSON.stringify(state);
     const hadError = Boolean(error);
-    const previousStatus = state?.meta?.status;
+    const previousStatus = state?.meta?.status ?? null;
+    const previousRound = state?.meta?.round ?? null;
     armResultOverlay(previousStatus, nextState);
+    armRoundIntro(previousStatus, previousRound, nextState);
     state = nextState;
     error = "";
 
@@ -591,7 +628,6 @@ function resultsHtml() {
       <h2>Passordrangering · runde ${r.round}</h2>
       <span>${r.remaining} videre</span>
     </div>
-    <p class="muted tiny">Spillere som gikk videre vises før eliminerte, og innen hver gruppe rangeres kortere passord først. Trykker du «Kopier», blir det valgte passordet utgangspunktet ditt i neste runde.</p>
     ${r.starWinners?.length ? `<div class="star-award"><span>⭐</span><div><strong>Kortest denne runden</strong><small>${r.starWinners.map(w => `${esc(w.name)} · ${w.effectivePasswordLength ?? w.passwordLength} tegn`).join(" & ")}</small></div></div>` : ""}
 
     <div class="players wedding-result-list">
@@ -679,7 +715,7 @@ function playerView() {
         ${voteHtml()}
         ${walterHtml()}
         ${eggHtml()}
-        ${state.meta.round === 10 ? "" : `<button id="submit-password" type="button" ${secondsLeft() === 0 || !walterDone ? "disabled" : ""}>Lever passord</button>`}
+        ${state.meta.round === 10 ? "" : `<button id="submit-password" type="button" ${secondsLeft() === 0 || !walterDone || roundIntroActive() ? "disabled" : ""}>Lever passord</button>`}
       </form>
       ${self.hasSubmitted ? `<div class="feedback good">✓ Passordet er lagret. Resultatet vises når runden avsluttes.</div>` : ""}
 
@@ -849,6 +885,7 @@ function render() {
     ${error ? `<div class="notice bad">${esc(error)}</div>` : ""}
     ${meta.status === "game_over" && (meta.winners || []).length ? `<div class="hero-winner">🏆 Vinner${meta.winners.length > 1 ? "e" : ""}: ${meta.winners.map(esc).join(", ")}${meta.winnerLength ? ` · ${meta.winnerLength} tegn` : ""}</div>` : ""}
     ${resultOverlayHtml()}
+    ${roundStartOverlayHtml()}
 
     <section class="grid">
       <div>
@@ -1166,6 +1203,12 @@ function bind() {
 }
 
 function tick() {
+  const startOverlay = document.querySelector(".round-start-overlay");
+  if (startOverlay && !roundIntroActive()) {
+    startOverlay.remove();
+    render();
+    return;
+  }
   const s = secondsLeft();
   const timer = document.querySelector("#timer");
   const headerTimer = document.querySelector("#header-countdown");

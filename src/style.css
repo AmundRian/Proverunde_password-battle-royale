@@ -1108,3 +1108,23 @@ body.participant-mode #password-input::placeholder {
 /* V10 structural participant guard: only the rule card embedded inside the active-round player view may display. */
 body.participant-mode .rules-card:not(.participant-active-rules-card) { display:none !important; }
 body.participant-mode:not([data-participant-phase="active-round"]) .participant-active-rules-card { display:none !important; }
+
+/* Participant round-start transition: deliberately viewport-independent so mobile and desktop match. */
+.round-start-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #fff;
+  color: #111;
+  text-align: center;
+}
+.round-start-overlay > div {
+  font-weight: 900;
+  font-size: clamp(2.5rem, 10vw, 6rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
