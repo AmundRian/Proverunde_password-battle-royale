@@ -1,368 +1,2018 @@
 import { Redis } from "@upstash/redis";
 import crypto from "node:crypto";
+import { createRequire } from "node:module";
 
-// Practice game v2: separate namespace from both the wedding game and the old practice rules.
-// Wedding game uses pbr:* and the previous practice version used pbr-practice:v1:*.
-const PREFIX = "pbr-practice:v6:";
-export const META_KEY = `${PREFIX}meta`;
-export const PLAYERS_KEY = `${PREFIX}players`;
-export const NAMES_KEY = `${PREFIX}names`;
-export const WINNER_KEY = `${PREFIX}winner`;
-export const VOTES_KEY = `${PREFIX}votes`;
+const require = createRequire(import.meta.url);
+const marvelCharactersPackage = require("marvel-characters");
+const MARVEL_PACKAGE_NAMES = Array.isArray(marvelCharactersPackage?.characters) ? marvelCharactersPackage.characters : [];
 
-export const RULES = [
-  { id: "country", text: "Passordet ditt må inneholde navnet på et land. Norske og engelske skrivemåter godkjennes." },
-  { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
-  { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
-  { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
-  { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." }
-];
+const META_KEY = "pbr:meta";
+const PLAYERS_KEY = "pbr:players";
+const NAMES_KEY = "pbr:names";
 
-// Based on the FN-sambandet country overview, plus English country names and common variants.
-// Matching is case-insensitive and ignores spaces, hyphens and Norwegian diacritics.
-const COUNTRY_NAMES = [
-  "United Kingdom of Great Britain and Northern Ireland", "Democratic Republic of Sao Tome and Principe", "Democratic Socialist Republic of Sri Lanka", "Federal Democratic Republic of Ethiopia",
-  "People's Democratic Republic of Algeria", "Democratic People's Republic of Korea", "Federal Democratic Republic of Nepal", "Independent State of Papua New Guinea",
-  "Korea, Democratic People's Republic of", "Congo, The Democratic Republic of the", "Den demokratiske republikken Kongo", "Democratic Republic of Timor-Leste",
-  "Republic of Bosnia and Herzegovina", "Bolivarian Republic of Venezuela", "Den sentralafrikanske republikk", "Venezuela, Bolivarian Republic of",
-  "Democratic Republic of the Congo", "Islamic Republic of Afghanistan", "Lao People's Democratic Republic", "Republic of the Marshall Islands",
-  "Saint Vincent and the Grenadines", "Bolivia, Plurinational State of", "Federated States of Micronesia", "Islamic Republic of Mauritania",
-  "Micronesia, Federated States of", "People's Republic of Bangladesh", "Plurinational State of Bolivia", "Principality of Liechtenstein",
-  "Republic of Trinidad and Tobago", "Federative Republic of Brazil", "Republic of Equatorial Guinea", "Socialist Republic of Viet Nam",
-  "De forente arabiske emirater", "Islamic Republic of Pakistan", "Saint Vincent og Grenadinene", "Commonwealth of the Bahamas",
-  "Den dominikanske republikk", "Eastern Republic of Uruguay", "Federal Republic of Germany", "Federal Republic of Nigeria",
-  "Federal Republic of Somalia", "Hashemite Kingdom of Jordan", "Republic of North Macedonia", "Republic of the Philippines",
-  "Tanzania, United Republic of", "United Republic of Tanzania", "Holy See (Vatican City State)", "Independent State of Samoa",
-  "Kingdom of the Netherlands", "Central African Republic", "Commonwealth of Dominica", "Grand Duchy of Luxembourg",
-  "Palestinian Territories", "People's Republic of China", "Republic of Guinea-Bissau", "Iran, Islamic Republic of",
-  "Islamic Republic of Iran", "Principality of Andorra", "Republic of Côte d'Ivoire", "Republic of Sierra Leone",
-  "Republic of South Africa", "Taiwan, Province of China", "United States of America", "Bosnia and Herzegovina",
-  "Kingdom of Saudi Arabia", "Principality of Monaco", "Republic of Azerbaijan", "Republic of El Salvador",
-  "Republic of Kazakhstan", "Republic of Madagascar", "Republic of Mozambique", "Republic of Seychelles",
-  "Republic of South Sudan", "Republic of Tajikistan", "Republic of Uzbekistan", "Arab Republic of Egypt",
-  "Republic of Cabo Verde", "Republic of Costa Rica", "Republic of Guatemala", "Republic of Indonesia",
-  "Republic of Lithuania", "Republic of Mauritius", "Republic of Nicaragua", "Republic of San Marino",
-  "Republic of Singapore", "Republic of the Gambia", "St. Vincent & Grenadines", "the State of Palestine",
-  "United Mexican States", "Portuguese Republic", "Republic of Botswana", "Republic of Bulgaria",
-  "Republic of Cameroon", "Republic of Colombia", "Republic of Djibouti", "Republic of Honduras",
-  "Republic of Kiribati", "Republic of Maldives", "Republic of Paraguay", "Republic of Slovenia",
-  "Republic of Suriname", "Republic of the Congo", "Republic of the Niger", "Republic of the Sudan",
-  "Republic of Zimbabwe", "Saint Kitts and Nevis", "Sao Tome and Principe", "São Tomé and Príncipe",
-  "Swiss Confederation", "Syrian Arab Republic", "United Arab Emirates", "Antigua and Barbuda",
-  "Argentine Republic", "Bosnia-Hercegovina", "Bosnia & Herzegovina", "Dominican Republic",
-  "Kingdom of Cambodia", "Kingdom of Eswatini", "Kingdom of Thailand", "Moldova, Republic of",
-  "Republic of Albania", "Republic of Armenia", "Republic of Austria", "Republic of Belarus",
-  "Republic of Burundi", "Republic of Croatia", "Republic of Ecuador", "Republic of Estonia",
-  "Republic of Finland", "Republic of Iceland", "Republic of Liberia", "Republic of Moldova",
-  "Republic of Myanmar", "Republic of Namibia", "Republic of Senegal", "Republic of Tunisia",
-  "Republic of Türkiye", "Republic of Vanuatu", "Russian Federation", "Saint Kitts og Nevis",
-  "São Tomé og Príncipe", "the State of Eritrea", "Trinidad and Tobago", "Union of the Comoros",
-  "Antigua og Barbuda", "Brunei Darussalam", "Congo - Brazzaville", "Ekvatorial-Guinea",
-  "Equatorial Guinea", "Gabonese Republic", "Hellenic Republic", "Kingdom of Bahrain",
-  "Kingdom of Belgium", "Kingdom of Denmark", "Kingdom of Lesotho", "Kingdom of Morocco",
-  "Lebanese Republic", "Palestine, State of", "Republic of Angola", "Republic of Cyprus",
-  "Republic of Guinea", "Republic of Guyana", "Republic of Latvia", "Republic of Malawi",
-  "Republic of Panama", "Republic of Poland", "Republic of Serbia", "Republic of Uganda",
-  "Republic of Zambia", "Republikken Kongo", "Rwandese Republic", "State of Palestine",
-  "Togolese Republic", "Trinidad og Tobago", "Elfenbenskysten", "Italian Republic",
-  "Kingdom of Bhutan", "Kingdom of Norway", "Kingdom of Sweden", "Korea, Republic of",
-  "Marshall Islands", "Republic of Benin", "Republic of Chile", "Republic of Ghana",
-  "Republic of Haiti", "Republic of India", "Republic of Kenya", "Republic of Malta",
-  "Republic of Nauru", "Republic of Palau", "Republic of Yemen", "São Tomé & Príncipe",
-  "Sultanate of Oman", "Antigua & Barbuda", "French Republic", "Kingdom of Spain",
-  "Kingdom of Tonga", "Kyrgyz Republic", "North Macedonia", "Papua New Guinea",
-  "Republic of Chad", "Republic of Cuba", "Republic of Fiji", "Republic of Iraq",
-  "Republic of Mali", "Republic of Peru", "Slovak Republic", "Solomon Islands",
-  "Trinidad & Tobago", "Congo - Kinshasa", "Czech Republic", "Hviterussland",
-  "Liechtenstein", "Marshalløyene", "Nord-Makedonia", "Papua Ny-Guinea",
-  "State of Israel", "State of Kuwait", "Storbritannia", "United Kingdom",
-  "Vatikanstaten", "Western Sahara", "Aserbajdsjan", "Great Britain",
-  "Guinea Bissau", "Guinea-Bissau", "Myanmar (Burma)", "Salomonøyene",
-  "State of Qatar", "St. Kitts & Nevis", "Tadsjikistan", "Turkmenistan",
-  "United States", "Afghanistan", "Burkina Faso", "Cook Islands",
-  "Cote d'Ivoire", "Côte d'Ivoire", "Côte d’Ivoire", "Filippinene",
-  "Kirgisistan", "Netherlands", "Philippines", "Saudi Arabia",
-  "Saudi-Arabia", "Seychellene", "Sierra Leone", "South Africa",
-  "Switzerland", "Vatican City", "Azerbaijan", "Bangladesh",
-  "El Salvador", "Ivory Coast", "Kasakhstan", "Kazakhstan",
-  "Kyrgyzstan", "Luxembourg", "Madagascar", "Madagaskar",
-  "Mauritania", "Micronesia", "Mikronesia", "Montenegro",
-  "Mozambique", "New Zealand", "North Korea", "Saint Lucia",
-  "Seychelles", "South Korea", "South Sudan", "Tajikistan",
-  "The Bahamas", "Timor-Leste", "Usbekistan", "Uzbekistan",
-  "Vest-Sahara", "Argentina", "Australia", "Cabo Verde",
-  "Cape Verde", "Cookøyene", "Costa Rica", "East Timor",
-  "Frankrike", "Guatemala", "Indonesia", "Kambodsja",
-  "Kapp Verde", "Lithuania", "Maldivene", "Mauritius",
-  "Nederland", "Nicaragua", "Nord-Korea", "Østerrike",
-  "Palestina", "Palestine", "San Marino", "Singapore",
-  "Sør-Afrika", "The Gambia", "Venezuela", "Barbados",
-  "Botswana", "Bulgaria", "Cambodia", "Cameroon",
-  "Colombia", "Djibouti", "Dominica", "Eswatini",
-  "Ethiopia", "Honduras", "Kiribati", "Komorene",
-  "Malaysia", "Maldives", "Mongolia", "Mosambik",
-  "Øst-Timor", "Pakistan", "Paraguay", "Portugal",
-  "Russland", "Slovakia", "Slovenia", "Sør-Korea",
-  "Sør-Sudan", "Sri Lanka", "Suriname", "Tanzania",
-  "Thailand", "Tsjekkia", "Tyskland", "Zimbabwe",
-  "Albania", "Algeria", "Algerie", "Andorra",
-  "Armenia", "Austria", "Bahamas", "Bahrain",
-  "Belarus", "Belgium", "Bolivia", "Burundi",
-  "Comoros", "Croatia", "Czechia", "Danmark",
-  "Denmark", "DR Congo", "Ecuador", "Eritrea",
-  "Estland", "Estonia", "Etiopia", "Finland",
-  "Georgia", "Germany", "Grenada", "Hungary",
-  "Iceland", "Ireland", "Jamaica", "Kamerun",
-  "Kroatia", "Lebanon", "Lesotho", "Libanon",
-  "Liberia", "Litauen", "Marokko", "Moldova",
-  "Morocco", "Myanmar", "Namibia", "Nigeria",
-  "Romania", "Senegal", "Somalia", "St. Lucia",
-  "Surinam", "Sverige", "Tunisia", "Türkiye",
-  "Ukraina", "Ukraine", "Uruguay", "Vanuatu",
-  "Viet Nam", "Vietnam", "Angola", "Belgia",
-  "Belize", "Bhutan", "Brasil", "Brazil",
-  "Brunei", "Canada", "Cyprus", "France",
-  "Gambia", "Greece", "Guinea", "Guyana",
-  "Hellas", "Irland", "Island", "Israel",
-  "Italia", "Jordan", "Kosovo", "Kuwait",
-  "Kypros", "Latvia", "Malawi", "Mexico",
-  "Monaco", "Norway", "Panama", "Poland",
-  "Russia", "Rwanda", "Serbia", "Spania",
-  "Sveits", "Sweden", "Taiwan", "Turkey",
-  "Tuvalu", "Tyrkia", "Uganda", "Ungarn",
-  "Zambia", "Benin", "Burma", "Chile",
-  "China", "Congo", "Egypt", "Gabon",
-  "Ghana", "Haiti", "India", "Italy",
-  "Japan", "Jemen", "Kenya", "Kongo",
-  "Libya", "Malta", "Nauru", "Nepal",
-  "Niger", "Norge", "Palau", "Polen",
-  "Qatar", "Samoa", "Spain", "Sudan",
-  "Syria", "Tonga", "Tsjad", "Yemen",
-  "Chad", "Cuba", "Fiji", "Irak",
-  "Iran", "Iraq", "Kina", "Laos",
-  "Mali", "Niue", "Oman", "Peru",
-  "Togo", "USA"
-];
-
-// First names from regjeringen.no's timeline of Norwegian prime ministers from 1814 to today.
-const PRIME_MINISTER_FIRST_NAMES = ["Peder", "Mathias", "Severin", "Frederik", "Georg", "Otto", "Christian", "Johan", "Emil", "Johannes", "Francis", "Jørgen", "Gunnar", "Wollert", "Jens", "Abraham", "Ivar", "Christopher", "Einar", "Oscar", "John", "Per", "Trygve", "Lars", "Odvar", "Gro", "Kåre", "Jan", "Thorbjørn", "Kjell", "Erna", "Jonas"];
-
-function normalizeForMatch(value) {
-  return String(value ?? "")
-    .toLocaleLowerCase("nb-NO")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/æ/g, "ae")
-    .replace(/ø/g, "o")
-    .replace(/å/g, "a")
-    .replace(/[^a-z0-9]/g, "");
-}
-
-const COUNTRY_KEYS = [...new Set(COUNTRY_NAMES.map(normalizeForMatch).filter(Boolean))];
-const PRIME_MINISTER_KEYS = [...new Set(PRIME_MINISTER_FIRST_NAMES.map(normalizeForMatch).filter(Boolean))];
-
-export function getRedis() {
+function redisClient() {
   const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   if (!url || !token) {
-    const error = new Error("Redis er ikke konfigurert. Koble en Upstash Redis-database til dette Vercel-prosjektet.");
+    const error = new Error("Redis is not configured. Connect an Upstash Redis database to this Vercel project.");
     error.statusCode = 500;
     throw error;
   }
   return new Redis({ url, token });
 }
 
+const GUEST_NAMES = [
+  "Johan",
+  "Tiva",
+  "Arne",
+  "Stig",
+  "Hilde-Kari",
+  "Ada",
+  "Marte",
+  "Eskil",
+  "Vivi",
+  "Ylva",
+  "Vetle",
+  "Sissel",
+  "Erik",
+  "Tiril Celine",
+  "Tiril",
+  "Marius",
+  "Caroline",
+  "Vegard",
+  "Elisabeth",
+  "Ida",
+  "Milad",
+  "Marthe",
+  "Andreas",
+  "Christine",
+  "Sondre",
+  "Josefine",
+  "Maren",
+  "Idun",
+  "Nicolai",
+  "Victor",
+  "Jens",
+  "Charlotte",
+  "Joachim",
+  "Aksel",
+  "Josefin",
+  "Anne",
+  "Håkon",
+  "Hakon",
+  "Pernille",
+  "Martin",
+  "Marie",
+  "Ragnhild",
+  "Vebjørn",
+  "Vebjorn",
+  "Julie",
+  "Ayla",
+  "Julia",
+  "Fredrik",
+  "Natasha",
+  "Ingrid",
+  "Thomas",
+  "Sindre",
+  "Hanne",
+  "Espen",
+  "Vikrant",
+  "Camilla",
+  "Hildegunn",
+  "Henrik",
+  "Cecilie",
+  "Sandra",
+  "Siri",
+  "Amund",
+  "Ina Marie",
+  "Ina",
+  "Jon Gunnar",
+  "Jon",
+  "Erlend"
+];
+
+const POKEMON_HINT_NAMES = [
+  "Tiva",
+  "Johan",
+  "Eskil",
+  "Vivi",
+  "Sissel",
+  "Erik",
+  "Arne",
+  "Hilde-Kari",
+  "Stig"
+];
+
+const EUROPEAN_CAPITALS = [
+  "Tirana",
+  "Andorra la Vella",
+  "Jerevan",
+  "Yerevan",
+  "Baku",
+  "Minsk",
+  "Brussel",
+  "Brussels",
+  "Sarajevo",
+  "Sofia",
+  "København",
+  "Copenhagen",
+  "Tallinn",
+  "Helsingfors",
+  "Helsinki",
+  "Paris",
+  "Tbilisi",
+  "Aten",
+  "Athen",
+  "Athens",
+  "Dublin",
+  "Reykjavík",
+  "Reykjavik",
+  "Roma",
+  "Rome",
+  "Prishtina",
+  "Pristina",
+  "Priština",
+  "Zagreb",
+  "Nikosia",
+  "Nicosia",
+  "Riga",
+  "Vaduz",
+  "Vilnius",
+  "Luxembourg",
+  "Valletta",
+  "Chisinau",
+  "Chișinău",
+  "Monaco",
+  "Monaco-Ville",
+  "Podgorica",
+  "Amsterdam",
+  "Skopje",
+  "Oslo",
+  "Warszawa",
+  "Warsaw",
+  "Lisboa",
+  "Lisbon",
+  "Bucuresti",
+  "București",
+  "Bucharest",
+  "Moskva",
+  "Moscow",
+  "San Marino",
+  "Beograd",
+  "Belgrade",
+  "Bratislava",
+  "Ljubljana",
+  "Madrid",
+  "London",
+  "Bern",
+  "Stockholm",
+  "Praha",
+  "Prague",
+  "Ankara",
+  "Berlin",
+  "Kyiv",
+  "Kiev",
+  "Budapest",
+  "Vatican City",
+  "Città del Vaticano",
+  "Wien",
+  "Vienna"
+];
+const NATO_WORDS = [
+  "Alfa",
+  "Alpha",
+  "Bravo",
+  "Charlie",
+  "Delta",
+  "Echo",
+  "Foxtrot",
+  "Golf",
+  "Hotel",
+  "India",
+  "Juliett",
+  "Juliet",
+  "Kilo",
+  "Lima",
+  "Mike",
+  "November",
+  "Oscar",
+  "Papa",
+  "Quebec",
+  "Romeo",
+  "Sierra",
+  "Tango",
+  "Uniform",
+  "Victor",
+  "Whiskey",
+  "Whisky",
+  "X-ray",
+  "Xray",
+  "Yankee",
+  "Zulu",
+  "Ærlig",
+  "Østen",
+  "Åse"
+];
+const MARVEL_CHARACTER_NAMES = [
+  "A-Bomb (HAS)",
+  "A.I.M.",
+  "Aaron Stack",
+  "Abomination (Emil Blonsky)",
+  "Abomination (Ultimate)",
+  "Absorbing Man",
+  "Abyss",
+  "Adam Warlock",
+  "Aero",
+  "Agatha Harkness",
+  "Agent Brand",
+  "Agent X (Nijo)",
+  "Agent Zero",
+  "Agents of Atlas",
+  "Air-Walker (Gabriel Lan)",
+  "Ajak",
+  "Albion",
+  "Amadeus Cho",
+  "American Eagle",
+  "Angel",
+  "Angel (Ultimate)",
+  "Angela",
+  "Annihilus",
+  "Ant-Man",
+  "Ant-Man (Eric O’Grady)",
+  "Ant-Man (Scott Lang)",
+  "Apocalypse",
+  "Archangel",
+  "Ares",
+  "Armor",
+  "Arnim Zola",
+  "Aurora",
+  "Avalanche",
+  "Avengers",
+  "Balder",
+  "Banshee",
+  "Baron Mordo (Karl Mordo)",
+  "Baron Strucker",
+  "Baron Zemo (Heinrich Zemo)",
+  "Baron Zemo (Helmut Zemo)",
+  "Bastion",
+  "Batroc the Leaper",
+  "Beast",
+  "Beetle (Abner Jenkins)",
+  "Belasco",
+  "Ben Grimm",
+  "Ben Parker",
+  "Ben Reilly",
+  "Ben Urich",
+  "Bengal",
+  "Beta-Ray Bill",
+  "Bishop",
+  "Black Bolt",
+  "Black Cat",
+  "Black Knight (Dane Whitman)",
+  "Black Panther",
+  "Black Panther (Shuri)",
+  "Black Queen",
+  "Black Tarantula",
+  "Black Tom",
+  "Black Widow",
+  "Black Widow (Yelena Belova)",
+  "Blackheart",
+  "Blacklash",
+  "Blackout",
+  "Blade",
+  "Blastaar",
+  "Blazing Skull",
+  "Blindfold",
+  "Bling!",
+  "Blink",
+  "Blizzard",
+  "Blob",
+  "Blockbuster",
+  "Blok",
+  "Bloke",
+  "Blonde Phantom",
+  "Bloodaxe",
+  "Bloodscream",
+  "Bloodstorm",
+  "Blue Marvel",
+  "Blue Shield",
+  "Blur",
+  "Bob, Agent of Hydra",
+  "Boom Boom",
+  "Boomer",
+  "Boomerang",
+  "Box",
+  "Brood",
+  "Brother Voodoo",
+  "Bruce Banner",
+  "Brute",
+  "Bucky",
+  "Bug",
+  "Bulldozer",
+  "Bullseye",
+  "Bushwacker",
+  "Butterfly",
+  "Cable",
+  "Caliban",
+  "Callisto",
+  "Cannonball",
+  "Captain America",
+  "Captain America (Sam Wilson)",
+  "Captain Britain",
+  "Captain Marvel",
+  "Captain Marvel (Carol Danvers)",
+  "Captain Marvel (Mar-Vell)",
+  "Carnage",
+  "Cassandra Nova",
+  "Chamber",
+  "Chameleon",
+  "Champions",
+  "Charlie-27",
+  "Chase Stein",
+  "Clea",
+  "Cloak",
+  "Colossus",
+  "Corsair",
+  "Cosmo",
+  "Crossbones",
+  "Crystal",
+  "Cyclops",
+  "Cypher",
+  "Dagger",
+  "Daken",
+  "Daredevil",
+  "Dark Beast",
+  "Dark Phoenix",
+  "Darkhawk",
+  "Dazzler",
+  "Deadpool",
+  "Death",
+  "Deathlok",
+  "Deathstrike",
+  "Debrii",
+  "Demogoblin",
+  "Destiny",
+  "Devil Dinosaur",
+  "Doctor Doom",
+  "Doctor Octopus",
+  "Doctor Strange",
+  "Domino",
+  "Doop",
+  "Dormammu",
+  "Drax",
+  "Dum Dum Dugan",
+  "Dust",
+  "Echo",
+  "Ego",
+  "Electro",
+  "Elektra",
+  "Elsa Bloodstone",
+  "Emma Frost",
+  "Enchantress",
+  "Eternals",
+  "Eternity",
+  "Exodus",
+  "Extremis",
+  "Falcon",
+  "Fandral",
+  "Fantastic Four",
+  "Fantomex",
+  "Fin Fang Foom",
+  "Firestar",
+  "Forge",
+  "Frank Castle",
+  "Franklin Richards",
+  "Frog-Man",
+  "Galactus",
+  "Gambit",
+  "Gamora",
+  "Ghost Rider",
+  "Ghost Rider (Johnny Blaze)",
+  "Ghost Rider (Robbie Reyes)",
+  "Ghost-Spider",
+  "Giant-Man",
+  "Gladiator",
+  "Goblin Queen",
+  "Gorgon",
+  "Grandmaster",
+  "Green Goblin",
+  "Grey Gargoyle",
+  "Groot",
+  "Guardians of the Galaxy",
+  "Gwen Stacy",
+  "Gwenpool",
+  "Hammerhead",
+  "Hank Pym",
+  "Havok",
+  "Hawkeye",
+  "Hawkeye (Kate Bishop)",
+  "Heimdall",
+  "Hela",
+  "Hellcat",
+  "Hellfire Club",
+  "Hercules",
+  "High Evolutionary",
+  "Hit-Monkey",
+  "Hobgoblin",
+  "Hope Summers",
+  "Howard the Duck",
+  "Hulk",
+  "Hulkling",
+  "Human Torch",
+  "Human Torch (Jim Hammond)",
+  "Hydra",
+  "Hydro-Man",
+  "Hyperion",
+  "Iceman",
+  "Ikaris",
+  "Illuminati",
+  "Illyana Rasputin",
+  "Immortus",
+  "Inhumans",
+  "Ink",
+  "Invisible Woman",
+  "Iron Fist",
+  "Iron Fist (Danny Rand)",
+  "Iron Lad",
+  "Iron Man",
+  "Iron Monger",
+  "Iron Patriot",
+  "Ironheart",
+  "Isaiah Bradley",
+  "J. Jonah Jameson",
+  "Jack O’Lantern",
+  "Jack Power",
+  "Jackal",
+  "Jackpot",
+  "James Buchanan Barnes",
+  "James Howlett",
+  "Jamie Braddock",
+  "Jane Foster",
+  "Jasper Sitwell",
+  "Jean Grey",
+  "Jessica Drew",
+  "Jessica Jones",
+  "Jigsaw",
+  "Jimmy Woo",
+  "Jocasta",
+  "Johnny Blaze",
+  "Johnny Storm",
+  "Juggernaut",
+  "Jubilee",
+  "Justice",
+  "Justin Hammer",
+  "Ka-Zar",
+  "Kang",
+  "Kang the Conqueror",
+  "Karma",
+  "Karnak",
+  "Karolina Dean",
+  "Kate Bishop",
+  "Killmonger",
+  "King Cobra",
+  "Kingpin",
+  "Kitty Pryde",
+  "Klaw",
+  "Korg",
+  "Korvac",
+  "Krakoa",
+  "Kraven the Hunter",
+  "Kree",
+  "Kwannon",
+  "Lady Bullseye",
+  "Lady Deathstrike",
+  "Leader",
+  "Leech",
+  "Legion",
+  "Lifeguard",
+  "Lightspeed",
+  "Lilandra",
+  "Lilith",
+  "Living Laser",
+  "Living Tribunal",
+  "Lizard",
+  "Lockheed",
+  "Lockjaw",
+  "Logan",
+  "Loki",
+  "Longshot",
+  "Lorna Dane",
+  "Luke Cage",
+  "Luna Snow",
+  "M.O.D.O.K.",
+  "Maestro",
+  "Magik",
+  "Magma",
+  "Magneto",
+  "Man-Thing",
+  "Mandarin",
+  "Mantis",
+  "Maria Hill",
+  "Marrow",
+  "Marvel Girl",
+  "Mary Jane Watson",
+  "Mastermind",
+  "Maverick",
+  "Medusa",
+  "Mephisto",
+  "Mercury",
+  "Mighty Thor",
+  "Miles Morales",
+  "Mimic",
+  "Mister Fantastic",
+  "Mister Sinister",
+  "Misty Knight",
+  "Mockingbird",
+  "Mojo",
+  "Mole Man",
+  "Molecule Man",
+  "Moon Girl",
+  "Moon Knight",
+  "Moondragon",
+  "Moonstar",
+  "Morbius",
+  "Morgan Le Fay",
+  "Ms. Marvel",
+  "Ms. Marvel (Kamala Khan)",
+  "Multiple Man",
+  "Mysterio",
+  "Mystique",
+  "Namor",
+  "Nebula",
+  "Negasonic Teenage Warhead",
+  "New Mutants",
+  "Nick Fury",
+  "Nightcrawler",
+  "Night Nurse",
+  "Night Thrasher",
+  "Nighthawk",
+  "Nimrod",
+  "Nova",
+  "Nova (Richard Rider)",
+  "Nova (Sam Alexander)",
+  "Odin",
+  "Okoye",
+  "Old Man Logan",
+  "Omega Red",
+  "Onslaught",
+  "Orb",
+  "Original Human Torch",
+  "Patriot",
+  "Peggy Carter",
+  "Pepper Potts",
+  "Peter Parker",
+  "Phyla-Vell",
+  "Phoenix",
+  "Polaris",
+  "Power Man",
+  "Professor X",
+  "Proteus",
+  "Prowler",
+  "Psylocke",
+  "Puck",
+  "Punisher",
+  "Purple Man",
+  "Pyro",
+  "Quake",
+  "Quasar",
+  "Quicksilver",
+  "Rachel Grey",
+  "Radioactive Man",
+  "Rage",
+  "Red Guardian",
+  "Red Hulk",
+  "Red She-Hulk",
+  "Red Skull",
+  "Rescue",
+  "Rhino",
+  "Rick Jones",
+  "Rocket Raccoon",
+  "Rogue",
+  "Ronan the Accuser",
+  "Runaways",
+  "Sabretooth",
+  "Sage",
+  "Sandman",
+  "Sasquatch",
+  "Scarlet Spider",
+  "Scarlet Witch",
+  "Scorpion",
+  "Sebastian Shaw",
+  "Sentry",
+  "Shadow King",
+  "Shang-Chi",
+  "Shanna the She-Devil",
+  "Shatterstar",
+  "She-Hulk",
+  "Shocker",
+  "Shuri",
+  "Silk",
+  "Silver Sable",
+  "Silver Samurai",
+  "Silver Surfer",
+  "Sin",
+  "Sinister",
+  "Skaar",
+  "Skrulls",
+  "Songbird",
+  "Speed",
+  "Speedball",
+  "Spider-Girl",
+  "Spider-Gwen",
+  "Spider-Ham",
+  "Spider-Man",
+  "Spider-Man (Miles Morales)",
+  "Spider-Man (Peter Parker)",
+  "Spider-Woman",
+  "Spiral",
+  "Squirrel Girl",
+  "Star-Lord",
+  "Starbrand",
+  "Stature",
+  "Stepford Cuckoos",
+  "Storm",
+  "Strong Guy",
+  "Sunfire",
+  "Sunspot",
+  "Super-Skrull",
+  "Surtur",
+  "Swarm",
+  "Sword Master",
+  "Taskmaster",
+  "Thanos",
+  "The Thing",
+  "Thing",
+  "Thor",
+  "Thor (Jane Foster)",
+  "Thunderbird",
+  "Thunderbolt Ross",
+  "Tigra",
+  "Titania",
+  "Toad",
+  "Toxin",
+  "U.S. Agent",
+  "Uatu",
+  "Ultron",
+  "Union Jack",
+  "Valkyrie",
+  "Venom",
+  "Vision",
+  "Vulture",
+  "War Machine",
+  "Warpath",
+  "Wasp",
+  "Watcher",
+  "Werewolf by Night",
+  "Whiplash",
+  "White Queen",
+  "White Tiger",
+  "White Widow",
+  "Wiccan",
+  "Winter Soldier",
+  "Wolfsbane",
+  "Wolverine",
+  "Wonder Man",
+  "Wong",
+  "X-23",
+  "X-Man",
+  "X-Men",
+  "Yellowjacket",
+  "Yondu",
+  "Young Avengers",
+  "Zemo",
+  "Zombie",
+];
+
+const MARVEL_NORWEGIAN_ALIASES = [
+  "Hulken",
+  "Edderkoppen",
+  "Jernmannen",
+  "Kaptein Amerika",
+  "Kaptein Marvel",
+  "Den sorte enke",
+  "Sorte Enke",
+  "Falkøye",
+  "Sølvsurferen",
+  "Sølv-surferen",
+  "Tingen",
+  "Menneskefakkelen",
+  "Den menneskelige fakkelen",
+  "Våghalsen",
+  "Våghals",
+  "Strafferen",
+  "Jerven",
+  "Den grønne gnom",
+  "Grønne Gnom",
+  "Doktor Doom",
+  "Doktor Strange",
+  "Den usynlige kvinnen",
+  "Fantastiske Fire",
+  "Den røde heksa",
+  "Skarlagenheksa",
+];
+
+function marvelAliasesForName(name) {
+  const raw = String(name || "").trim();
+  const aliases = new Set([raw]);
+  const withoutParen = raw.replace(/\s*\([^)]*\)\s*/g, " ").replace(/\s+/g, " ").trim();
+  if (withoutParen) aliases.add(withoutParen);
+  const commaBase = withoutParen.split(",")[0]?.trim();
+  if (commaBase) aliases.add(commaBase);
+  const slashParts = withoutParen.split("/").map(v => v.trim()).filter(Boolean);
+  for (const part of slashParts) aliases.add(part);
+  const parens = [...raw.matchAll(/\(([^)]+)\)/g)].map(m => m[1].trim()).filter(Boolean);
+  for (const value of parens) {
+    if (value.length >= 3 && !/^(ultimate|has|maa|usm|age of apocalypse)$/i.test(value)) aliases.add(value);
+  }
+  return [...aliases];
+}
+
+const MARVEL_ACCEPTED_NAMES = [...new Set([
+  ...MARVEL_PACKAGE_NAMES.flatMap(marvelAliasesForName),
+  ...MARVEL_CHARACTER_NAMES.flatMap(marvelAliasesForName),
+  ...MARVEL_NORWEGIAN_ALIASES
+])].filter(Boolean);
+
+const BEATLES_SONGS = [
+  "I Saw Her Standing There",
+  "Misery",
+  "Anna (Go to Him)",
+  "Chains",
+  "Boys",
+  "Ask Me Why",
+  "Please Please Me",
+  "Love Me Do",
+  "P.S. I Love You",
+  "Baby It's You",
+  "Do You Want to Know a Secret",
+  "A Taste of Honey",
+  "There's a Place",
+  "Twist and Shout",
+  "It Won't Be Long",
+  "All I've Got to Do",
+  "All My Loving",
+  "Don't Bother Me",
+  "Little Child",
+  "Till There Was You",
+  "Please Mister Postman",
+  "Roll Over Beethoven",
+  "Hold Me Tight",
+  "You Really Got a Hold on Me",
+  "I Wanna Be Your Man",
+  "Devil in Her Heart",
+  "Not a Second Time",
+  "Money (That's What I Want)",
+  "A Hard Day's Night",
+  "I Should Have Known Better",
+  "If I Fell",
+  "I'm Happy Just to Dance with You",
+  "And I Love Her",
+  "Tell Me Why",
+  "Can't Buy Me Love",
+  "Any Time at All",
+  "I'll Cry Instead",
+  "Things We Said Today",
+  "When I Get Home",
+  "You Can't Do That",
+  "I'll Be Back",
+  "No Reply",
+  "I'm a Loser",
+  "Baby's in Black",
+  "Rock and Roll Music",
+  "I'll Follow the Sun",
+  "Mr. Moonlight",
+  "Kansas City/Hey-Hey-Hey-Hey!",
+  "Eight Days a Week",
+  "Words of Love",
+  "Honey Don't",
+  "Every Little Thing",
+  "I Don't Want to Spoil the Party",
+  "What You're Doing",
+  "Everybody's Trying to Be My Baby",
+  "Help!",
+  "The Night Before",
+  "You've Got to Hide Your Love Away",
+  "I Need You",
+  "Another Girl",
+  "You're Going to Lose That Girl",
+  "Ticket to Ride",
+  "Act Naturally",
+  "It's Only Love",
+  "You Like Me Too Much",
+  "Tell Me What You See",
+  "I've Just Seen a Face",
+  "Yesterday",
+  "Dizzy Miss Lizzy",
+  "Drive My Car",
+  "Norwegian Wood (This Bird Has Flown)",
+  "You Won't See Me",
+  "Nowhere Man",
+  "Think for Yourself",
+  "The Word",
+  "Michelle",
+  "What Goes On",
+  "Girl",
+  "I'm Looking Through You",
+  "In My Life",
+  "Wait",
+  "If I Needed Someone",
+  "Run for Your Life",
+  "Taxman",
+  "Eleanor Rigby",
+  "I'm Only Sleeping",
+  "Love You To",
+  "Here, There and Everywhere",
+  "Yellow Submarine",
+  "She Said She Said",
+  "Good Day Sunshine",
+  "And Your Bird Can Sing",
+  "For No One",
+  "Doctor Robert",
+  "I Want to Tell You",
+  "Got to Get You into My Life",
+  "Tomorrow Never Knows",
+  "Sgt. Pepper's Lonely Hearts Club Band",
+  "With a Little Help from My Friends",
+  "Lucy in the Sky with Diamonds",
+  "Getting Better",
+  "Fixing a Hole",
+  "She's Leaving Home",
+  "Being for the Benefit of Mr. Kite!",
+  "Within You Without You",
+  "When I'm Sixty-Four",
+  "Lovely Rita",
+  "Good Morning Good Morning",
+  "Sgt. Pepper's Lonely Hearts Club Band (Reprise)",
+  "A Day in the Life",
+  "Magical Mystery Tour",
+  "The Fool on the Hill",
+  "Flying",
+  "Blue Jay Way",
+  "Your Mother Should Know",
+  "I Am the Walrus",
+  "Hello, Goodbye",
+  "Strawberry Fields Forever",
+  "Penny Lane",
+  "Baby, You're a Rich Man",
+  "All You Need Is Love",
+  "Back in the U.S.S.R.",
+  "Dear Prudence",
+  "Glass Onion",
+  "Ob-La-Di, Ob-La-Da",
+  "Wild Honey Pie",
+  "The Continuing Story of Bungalow Bill",
+  "While My Guitar Gently Weeps",
+  "Happiness Is a Warm Gun",
+  "Martha My Dear",
+  "I'm So Tired",
+  "Blackbird",
+  "Piggies",
+  "Rocky Raccoon",
+  "Don't Pass Me By",
+  "Why Don't We Do It in the Road?",
+  "I Will",
+  "Julia",
+  "Birthday",
+  "Yer Blues",
+  "Mother Nature's Son",
+  "Everybody's Got Something to Hide Except Me and My Monkey",
+  "Sexy Sadie",
+  "Helter Skelter",
+  "Long, Long, Long",
+  "Revolution 1",
+  "Honey Pie",
+  "Savoy Truffle",
+  "Cry Baby Cry",
+  "Revolution 9",
+  "Good Night",
+  "Only a Northern Song",
+  "All Together Now",
+  "Hey Bulldog",
+  "It's All Too Much",
+  "Come Together",
+  "Something",
+  "Maxwell's Silver Hammer",
+  "Oh! Darling",
+  "Octopus's Garden",
+  "I Want You (She's So Heavy)",
+  "Here Comes the Sun",
+  "Because",
+  "You Never Give Me Your Money",
+  "Sun King",
+  "Mean Mr. Mustard",
+  "Polythene Pam",
+  "She Came In Through the Bathroom Window",
+  "Golden Slumbers",
+  "Carry That Weight",
+  "The End",
+  "Her Majesty",
+  "Two of Us",
+  "Dig a Pony",
+  "Across the Universe",
+  "I Me Mine",
+  "Dig It",
+  "Let It Be",
+  "Maggie Mae",
+  "I've Got a Feeling",
+  "One After 909",
+  "The Long and Winding Road",
+  "For You Blue",
+  "Get Back",
+  "From Me to You",
+  "Thank You Girl",
+  "She Loves You",
+  "I'll Get You",
+  "I Want to Hold Your Hand",
+  "This Boy",
+  "Komm, gib mir deine Hand",
+  "Sie liebt dich",
+  "Long Tall Sally",
+  "I Call Your Name",
+  "Slow Down",
+  "Matchbox",
+  "I Feel Fine",
+  "She's a Woman",
+  "Bad Boy",
+  "Yes It Is",
+  "I'm Down",
+  "Day Tripper",
+  "We Can Work It Out",
+  "Paperback Writer",
+  "Rain",
+  "Lady Madonna",
+  "The Inner Light",
+  "Hey Jude",
+  "Revolution",
+  "Don't Let Me Down",
+  "The Ballad of John and Yoko",
+  "Old Brown Shoe",
+  "You Know My Name (Look Up the Number)",
+  "Free as a Bird",
+  "Real Love",
+  "Now and Then",
+  "12-Bar Original",
+  "Ain't She Sweet",
+  "All Things Must Pass",
+  "Bad to Me",
+  "Beautiful Dreamer",
+  "Bésame Mucho",
+  "Blue Moon",
+  "Can You Dig It?",
+  "Can You Take Me Back?",
+  "Carol",
+  "Cayenne",
+  "Clarabella",
+  "Come and Get It",
+  "Cry for a Shadow",
+  "Hallelujah, I Love Her So",
+  "Hello Little Girl",
+  "How Do You Do It?",
+  "I'll Be on My Way",
+  "I'm in Love",
+  "I'm Gonna Sit Right Down and Cry (Over You)",
+  "I'm Talking About You",
+  "If You've Got Trouble",
+  "In Spite of All the Danger",
+  "Johnny B. Goode",
+  "Junk",
+  "Keep Your Hands off My Baby",
+  "Leave My Kitten Alone",
+  "Lend Me Your Comb",
+  "Like Dreamers Do",
+  "Los Paranoias",
+  "Love of the Loved",
+  "Memphis, Tennessee",
+  "My Bonnie",
+  "Nobody's Child",
+  "Not Guilty",
+  "Nothin' Shakin'",
+  "One and One Is Two",
+  "Searchin'",
+  "Shout",
+  "So How Come (No One Loves Me)",
+  "Soldier of Love",
+  "Some Other Guy",
+  "Sour Milk Sea",
+  "Step Inside Love",
+  "St. Louis Blues",
+  "Sure to Fall (in Love with You)",
+  "Sweet Georgia Brown",
+  "Sweet Little Sixteen",
+  "Take Out Some Insurance on Me, Baby",
+  "Teddy Boy",
+  "That Means a Lot",
+  "Three Cool Cats",
+  "To Know Her Is to Love Her",
+  "What's the New Mary Jane",
+  "You Know What to Do",
+  "You'll Be Mine",
+  "Young Blood",
+  "The Honeymoon Song",
+  "Lucille",
+  "Lonesome Tears in My Eyes",
+  "Ooh! My Soul",
+  "Too Much Monkey Business",
+  "I Got to Find My Baby",
+  "The Hippy Hippy Shake",
+  "Glad All Over",
+  "Don't Ever Change",
+  "Crying, Waiting, Hoping",
+  "I Just Don't Understand",
+  "A Shot of Rhythm and Blues",
+  "That's All Right (Mama)"
+];
+const QUEEN_SONGS = [
+  "Keep Yourself Alive",
+  "Doing All Right",
+  "Great King Rat",
+  "My Fairy King",
+  "Liar",
+  "The Night Comes Down",
+  "Modern Times Rock 'n' Roll",
+  "Son and Daughter",
+  "Jesus",
+  "Seven Seas of Rhye",
+  "Procession",
+  "Father to Son",
+  "White Queen (As It Began)",
+  "Some Day One Day",
+  "The Loser in the End",
+  "Ogre Battle",
+  "The Fairy Feller's Master-Stroke",
+  "Nevermore",
+  "The March of the Black Queen",
+  "Funny How Love Is",
+  "Brighton Rock",
+  "Killer Queen",
+  "Tenement Funster",
+  "Flick of the Wrist",
+  "Lily of the Valley",
+  "Now I'm Here",
+  "In the Lap of the Gods",
+  "Stone Cold Crazy",
+  "Dear Friends",
+  "Misfire",
+  "Bring Back That Leroy Brown",
+  "She Makes Me (Stormtrooper in Stilettoes)",
+  "In the Lap of the Gods... Revisited",
+  "Death on Two Legs (Dedicated to...)",
+  "Lazing on a Sunday Afternoon",
+  "I'm in Love with My Car",
+  "You're My Best Friend",
+  "'39",
+  "Sweet Lady",
+  "Seaside Rendezvous",
+  "The Prophet's Song",
+  "Love of My Life",
+  "Good Company",
+  "Bohemian Rhapsody",
+  "God Save the Queen",
+  "Tie Your Mother Down",
+  "You Take My Breath Away",
+  "Long Away",
+  "The Millionaire Waltz",
+  "You and I",
+  "Somebody to Love",
+  "White Man",
+  "Good Old-Fashioned Lover Boy",
+  "Drowse",
+  "Teo Torriatte (Let Us Cling Together)",
+  "We Will Rock You",
+  "We Are the Champions",
+  "Sheer Heart Attack",
+  "All Dead, All Dead",
+  "Spread Your Wings",
+  "Fight from the Inside",
+  "Get Down, Make Love",
+  "Sleeping on the Sidewalk",
+  "Who Needs You",
+  "It's Late",
+  "My Melancholy Blues",
+  "Mustapha",
+  "Fat Bottomed Girls",
+  "Jealousy",
+  "Bicycle Race",
+  "If You Can't Beat Them",
+  "Let Me Entertain You",
+  "Dead on Time",
+  "In Only Seven Days",
+  "Dreamer's Ball",
+  "Fun It",
+  "Leaving Home Ain't Easy",
+  "Don't Stop Me Now",
+  "More of That Jazz",
+  "Play the Game",
+  "Dragon Attack",
+  "Another One Bites the Dust",
+  "Need Your Loving Tonight",
+  "Crazy Little Thing Called Love",
+  "Rock It (Prime Jive)",
+  "Don't Try Suicide",
+  "Sail Away Sweet Sister",
+  "Coming Soon",
+  "Save Me",
+  "Flash's Theme",
+  "In the Space Capsule (The Love Theme)",
+  "Ming's Theme (In the Court of Ming the Merciless)",
+  "The Ring (Hypnotic Seduction of Dale)",
+  "Football Fight",
+  "In the Death Cell (Love Theme Reprise)",
+  "Execution of Flash",
+  "The Kiss (Aura Resurrects Flash)",
+  "Arboria (Planet of the Tree Men)",
+  "Escape from the Swamp",
+  "Flash to the Rescue",
+  "Vultan's Theme (Attack of the Hawk Men)",
+  "Battle Theme",
+  "The Wedding March",
+  "Marriage of Dale and Ming (And Flash Approaching)",
+  "Crash Dive on Mingo City",
+  "Flash's Theme Reprise (Victory Celebrations)",
+  "The Hero",
+  "Staying Power",
+  "Dancer",
+  "Back Chat",
+  "Body Language",
+  "Action This Day",
+  "Put Out the Fire",
+  "Life Is Real (Song for Lennon)",
+  "Calling All Girls",
+  "Las Palabras de Amor (The Words of Love)",
+  "Cool Cat",
+  "Under Pressure",
+  "Radio Ga Ga",
+  "Tear It Up",
+  "It's a Hard Life",
+  "Man on the Prowl",
+  "Machines (Or Back to Humans)",
+  "I Want to Break Free",
+  "Keep Passing the Open Windows",
+  "Hammer to Fall",
+  "Is This the World We Created...?",
+  "One Vision",
+  "A Kind of Magic",
+  "One Year of Love",
+  "Pain Is So Close to Pleasure",
+  "Friends Will Be Friends",
+  "Who Wants to Live Forever",
+  "Gimme the Prize (Kurgan's Theme)",
+  "Don't Lose Your Head",
+  "Princes of the Universe",
+  "Forever",
+  "Party",
+  "Khashoggi's Ship",
+  "The Miracle",
+  "I Want It All",
+  "The Invisible Man",
+  "Breakthru",
+  "Rain Must Fall",
+  "Scandal",
+  "My Baby Does Me",
+  "Was It All Worth It",
+  "Hang On in There",
+  "Chinese Torture",
+  "Hijack My Heart",
+  "Stealin'",
+  "My Life Has Been Saved",
+  "Innuendo",
+  "I'm Going Slightly Mad",
+  "Headlong",
+  "I Can't Live with You",
+  "Don't Try So Hard",
+  "Ride the Wild Wind",
+  "All God's People",
+  "These Are the Days of Our Lives",
+  "Delilah",
+  "The Hitman",
+  "Bijou",
+  "The Show Must Go On",
+  "It's a Beautiful Day",
+  "Made in Heaven",
+  "Let Me Live",
+  "Mother Love",
+  "I Was Born to Love You",
+  "Heaven for Everyone",
+  "Too Much Love Will Kill You",
+  "You Don't Fool Me",
+  "A Winter's Tale",
+  "It's a Beautiful Day (Reprise)",
+  "Thank God It's Christmas",
+  "No-One But You (Only the Good Die Young)",
+  "Soul Brother",
+  "See What a Fool I've Been",
+  "A Human Body",
+  "Blurred Vision",
+  "A Dozen Red Roses for My Darling",
+  "I Go Crazy",
+  "Love Kills - The Ballad",
+  "Let Me in Your Heart Again",
+  "Face It Alone",
+  "Dog With a Bone",
+  "Feelings, Feelings",
+  "Gimme Some Lovin'",
+  "Hangman",
+  "Hello Mary Lou",
+  "I Guess We're Falling Out",
+  "Jailhouse Rock",
+  "Big Spender"
+];
+const KILLERS_SONGS = [
+  "All the Pretty Faces",
+  "All These Things That I've Done",
+  "Andy, You're a Star",
+  "The Ballad of Michael Valentine",
+  "Battle Born",
+  "Be Still",
+  "Believe Me Natalie",
+  "Bling (Confession of a King)",
+  "Blowback",
+  "Bones",
+  "Boots",
+  "Boy",
+  "Bright Lights",
+  "C'est La Vie",
+  "The Calling",
+  "Carry Me Home",
+  "Caution",
+  "Change Your Mind",
+  "Christmas in L.A.",
+  "Cody",
+  "The Cowboys' Christmas Ball",
+  "A Crippling Blow",
+  "Daddy's Eyes",
+  "Deadlines and Commitments",
+  "Desperate Things",
+  "Dirt Sledding",
+  "Don't Shoot Me Santa",
+  "A Dustland Fairytale",
+  "Dying Breed",
+  "Enterlude",
+  "Everything Will Be Alright",
+  "Exitlude",
+  "Fire in Bone",
+  "Flesh and Bone",
+  "For Reasons Unknown",
+  "Forget About What I Said",
+  "From Here on Out",
+  "Get Trashed",
+  "The Getting By",
+  "The Getting By II",
+  "The Getting By III",
+  "The Getting By IV",
+  "The Getting By V",
+  "Glamorous Indie Rock & Roll",
+  "Goatsucker",
+  "Goodnight, Travel Well",
+  "A Great Big Sled",
+  "¡Happy Birthday Guadalupe!",
+  "Have All the Songs Been Written?",
+  "Heart of a Girl",
+  "Here with Me",
+  "Human",
+  "I Can't Stay",
+  "I Feel It in My Bones",
+  "Imploding the Mirage",
+  "In Another Life",
+  "In the Car Outside",
+  "Jenny Was a Friend of Mine",
+  "Joel the Lump of Coal",
+  "Joseph, Better You than Me",
+  "Joy Ride",
+  "Just Another Girl",
+  "Land of the Free",
+  "Leave the Bourbon on the Shelf",
+  "Life to Come",
+  "Lightning Fields",
+  "Losing Touch",
+  "The Man",
+  "A Matter of Time",
+  "Midnight Show",
+  "Miss Atomic Bomb",
+  "Money on Straight",
+  "Move Away",
+  "Mr. Brightside",
+  "My God",
+  "My List",
+  "My Own Soul's Warning",
+  "Neon Tiger",
+  "On Top",
+  "Out of My Mind",
+  "Peace of Mind",
+  "Prize Fighter",
+  "Pressure Machine",
+  "Questions with the Captain",
+  "Quiet Town",
+  "Read My Mind",
+  "The Rising Tide",
+  "Run for Cover",
+  "Runaway Horses",
+  "Runaway Horses II",
+  "Runaways",
+  "Running Towards a Place",
+  "Rut",
+  "Sam's Town",
+  "Shot at the Night",
+  "Show You How",
+  "Sleepwalker",
+  "Smile Like You Mean It",
+  "Some Kind of Love",
+  "Somebody Told Me",
+  "Spaceman",
+  "Spaceship Adventure",
+  "Spirit",
+  "Sweet Talk",
+  "Terrible Thing",
+  "This Is Your Life",
+  "This River Is Wild",
+  "Tidal Wave",
+  "Tranquilize",
+  "Tyson vs Douglas",
+  "Uncle Jonny",
+  "Under the Gun",
+  "The Way It Was",
+  "West Hills",
+  "West Hills II",
+  "West Hills III",
+  "When the Dreams Run Dry",
+  "When You Were Young",
+  "Where the White Boys Dance",
+  "A White Demon Love Song",
+  "Who Let You Go?",
+  "Why Do I Keep Counting?",
+  "Wonderful Wonderful",
+  "The World We Live In",
+  "Your Side of Town",
+  "Zombie Hands",
+  "Don't Fence Me In",
+  "Four Winds",
+  "Go All the Way",
+  "Hotel California",
+  "I'll Be Home for Christmas",
+  "Mona Lisas and Mad Hatters",
+  "Romeo & Juliet",
+  "Ruby, Don't Take Your Love to Town",
+  "Shadowplay",
+  "Ultraviolet (Light My Way)",
+  "Why Don't You Find Out for Yourself"
+];
+const GEN1_POKEMON = [
+  "Bulbasaur",
+  "Ivysaur",
+  "Venusaur",
+  "Charmander",
+  "Charmeleon",
+  "Charizard",
+  "Squirtle",
+  "Wartortle",
+  "Blastoise",
+  "Caterpie",
+  "Metapod",
+  "Butterfree",
+  "Weedle",
+  "Kakuna",
+  "Beedrill",
+  "Pidgey",
+  "Pidgeotto",
+  "Pidgeot",
+  "Rattata",
+  "Raticate",
+  "Spearow",
+  "Fearow",
+  "Ekans",
+  "Arbok",
+  "Pikachu",
+  "Raichu",
+  "Sandshrew",
+  "Sandslash",
+  "Nidoran♀",
+  "Nidorina",
+  "Nidoqueen",
+  "Nidoran♂",
+  "Nidorino",
+  "Nidoking",
+  "Clefairy",
+  "Clefable",
+  "Vulpix",
+  "Ninetales",
+  "Jigglypuff",
+  "Wigglytuff",
+  "Zubat",
+  "Golbat",
+  "Oddish",
+  "Gloom",
+  "Vileplume",
+  "Paras",
+  "Parasect",
+  "Venonat",
+  "Venomoth",
+  "Diglett",
+  "Dugtrio",
+  "Meowth",
+  "Persian",
+  "Psyduck",
+  "Golduck",
+  "Mankey",
+  "Primeape",
+  "Growlithe",
+  "Arcanine",
+  "Poliwag",
+  "Poliwhirl",
+  "Poliwrath",
+  "Abra",
+  "Kadabra",
+  "Alakazam",
+  "Machop",
+  "Machoke",
+  "Machamp",
+  "Bellsprout",
+  "Weepinbell",
+  "Victreebel",
+  "Tentacool",
+  "Tentacruel",
+  "Geodude",
+  "Graveler",
+  "Golem",
+  "Ponyta",
+  "Rapidash",
+  "Slowpoke",
+  "Slowbro",
+  "Magnemite",
+  "Magneton",
+  "Farfetch'd",
+  "Doduo",
+  "Dodrio",
+  "Seel",
+  "Dewgong",
+  "Grimer",
+  "Muk",
+  "Shellder",
+  "Cloyster",
+  "Gastly",
+  "Haunter",
+  "Gengar",
+  "Drowzee",
+  "Hypno",
+  "Krabby",
+  "Kingler",
+  "Voltorb",
+  "Electrode",
+  "Exeggcute",
+  "Exeggutor",
+  "Cubone",
+  "Marowak",
+  "Hitmonlee",
+  "Hitmonchan",
+  "Lickitung",
+  "Koffing",
+  "Weezing",
+  "Rhyhorn",
+  "Rhydon",
+  "Chansey",
+  "Tangela",
+  "Kangaskhan",
+  "Horsea",
+  "Seadra",
+  "Goldeen",
+  "Seaking",
+  "Staryu",
+  "Starmie",
+  "Mr. Mime",
+  "Scyther",
+  "Jynx",
+  "Electabuzz",
+  "Magmar",
+  "Pinsir",
+  "Tauros",
+  "Magikarp",
+  "Gyarados",
+  "Lapras",
+  "Ditto",
+  "Eevee",
+  "Vaporeon",
+  "Jolteon",
+  "Flareon",
+  "Porygon",
+  "Omanyte",
+  "Omastar",
+  "Kabuto",
+  "Kabutops",
+  "Aerodactyl",
+  "Snorlax",
+  "Articuno",
+  "Zapdos",
+  "Moltres",
+  "Dratini",
+  "Dragonair",
+  "Dragonite",
+  "Mewtwo",
+  "Mew",
+  "NidoranF",
+  "NidoranFemale",
+  "NidoranM",
+  "NidoranMale"
+];
+const BRAD_PITT_FILMS = [
+  "Hunk",
+  "No Man's Land",
+  "Less than Zero",
+  "No Way Out",
+  "The Dark Side of the Sun",
+  "Happy Together",
+  "Cutting Class",
+  "Across the Tracks",
+  "Thelma & Louise",
+  "Johnny Suede",
+  "Cool World",
+  "A River Runs Through It",
+  "Kalifornia",
+  "True Romance",
+  "The Favor",
+  "Interview with the Vampire",
+  "Legends of the Fall",
+  "Seven",
+  "Se7en",
+  "12 Monkeys",
+  "Sleepers",
+  "The Devil's Own",
+  "Seven Years in Tibet",
+  "Meet Joe Black",
+  "Being John Malkovich",
+  "Fight Club",
+  "Snatch",
+  "The Mexican",
+  "Spy Game",
+  "Ocean's Eleven",
+  "Full Frontal",
+  "Confessions of a Dangerous Mind",
+  "Sinbad: Legend of the Seven Seas",
+  "Abby Singer",
+  "Troy",
+  "Ocean's Twelve",
+  "Mr. & Mrs. Smith",
+  "Babel",
+  "Ocean's Thirteen",
+  "The Assassination of Jesse James by the Coward Robert Ford",
+  "Burn After Reading",
+  "The Curious Case of Benjamin Button",
+  "Inglourious Basterds",
+  "Megamind",
+  "The Tree of Life",
+  "Moneyball",
+  "Happy Feet Two",
+  "Killing Them Softly",
+  "World War Z",
+  "12 Years a Slave",
+  "The Counselor",
+  "Fury",
+  "By the Sea",
+  "The Big Short",
+  "Allied",
+  "War Machine",
+  "Deadpool 2",
+  "Once Upon a Time in Hollywood",
+  "Ad Astra",
+  "The Lost City",
+  "Bullet Train",
+  "Babylon",
+  "IF",
+  "Wolfs",
+  "F1",
+  "En vampyrs bekjennelser",
+  "Høstlegender",
+  "Syv",
+  "Syv år i Tibet",
+  "Troja",
+  "Den fantastiske historien om Benjamin Button",
+  "Megahjerne",
+  "12 år som slave"
+];
+const WEDDING_ANNIVERSARIES = [
+  "papir",
+  "paper",
+  "bomull",
+  "cotton",
+  "lær",
+  "laer",
+  "leather",
+  "blomster",
+  "blomst",
+  "flowers",
+  "flower",
+  "lin",
+  "linen",
+  "tre",
+  "wood",
+  "sukker",
+  "sugar",
+  "ull",
+  "wool",
+  "bronse",
+  "bronze",
+  "pil",
+  "willow",
+  "keramikk",
+  "ceramic",
+  "pottery",
+  "tinn",
+  "tin",
+  "stål",
+  "stal",
+  "steel",
+  "silke",
+  "silk",
+  "knipling",
+  "lace",
+  "elfenben",
+  "ivory",
+  "krystall",
+  "crystal",
+  "porselen",
+  "porcelain",
+  "sølv",
+  "solv",
+  "silver",
+  "perle",
+  "pearl",
+  "korall",
+  "coral",
+  "rubin",
+  "ruby",
+  "safir",
+  "sapphire",
+  "gull",
+  "gold",
+  "golden",
+  "smaragd",
+  "emerald",
+  "diamant",
+  "diamond",
+  "krondiamant",
+  "crown diamond",
+  "jern",
+  "iron",
+  "atom"
+];
+
+const SONG_TITLES = [...BEATLES_SONGS, ...QUEEN_SONGS, ...KILLERS_SONGS];
+
+// Rule 11: fixed Norwegian/English answer set for the five pictured animals.
+// normalizeLoose() removes spaces, hyphens and punctuation before matching,
+// so variants such as "duck-billed platypus" and "duck billed platypus" are equivalent.
+
+const PICTURE_ANIMALS = [
+  // Nebbdyr / platypus
+  "nebbdyr",
+  "nebdyr",
+  "platypus",
+  "platipus",
+  "duck billed platypus",
+  "duck-billed platypus",
+  "duckbill platypus",
+
+  // Maurpiggsvin / echidna. Also accept the common variant maurpinnsvin
+  // and a few forgiving spellings for the game.
+  "maurpiggsvin",
+  "maurpinnsvin",
+  "maurpinsvin",
+  "maur piggsvin",
+  "maur pinnsvin",
+  "echidna",
+  "ekidna",
+  "spiny anteater",
+
+  // Leopard
+  "leopard",
+  "leopart",
+
+  // Sommerfugl / butterfly. Sommerfuggel is a common informal misspelling.
+  "sommerfugl",
+  "sommerfuggel",
+  "sommerfugel",
+  "butterfly",
+
+  // Jerv / wolverine
+  "jerv",
+  "wolverine",
+  "wolverin"
+];
+
+const TWO_COLOR_FLAG_COUNTRIES = [
+  "Albania", "Austria", "Østerrike", "Oesterrike", "Bahrain", "Bangladesh",
+  "Canada", "Kanada", "China", "Kina", "Denmark", "Danmark", "Finland",
+  "Georgia", "Greece", "Hellas", "Honduras", "Indonesia", "Israel", "Japan",
+  "Kazakhstan", "Kasakhstan", "Kyrgyzstan", "Kirgisistan", "Latvia",
+  "North Macedonia", "Nord-Makedonia", "Nord Makedonia", "Micronesia", "Mikronesia",
+  "Monaco", "Morocco", "Marokko", "Nigeria", "Pakistan", "Palau", "Poland", "Polen",
+  "Qatar", "Saudi Arabia", "Saudi-Arabia", "Singapore", "Somalia", "Sweden", "Sverige",
+  "Switzerland", "Sveits", "Tonga", "Tunisia", "Turkey", "Tyrkia", "Türkiye", "Turkiye",
+  "Ukraine", "Ukraina", "Vietnam"
+];
+
+export const TIMELINE_ORDER = ["moon", "2017", "first_meeting", "2023", "engagement", "walter_puppy"];
+export const TIMELINE_SECRET = "noldus";
+
+export const RULES = [
+  { id: "guest", text: "Passordet ditt må inneholde fornavnet på en gjest i bryllupet." },
+  { id: "round2", text: "Passordet ditt må inneholde minst én stor bokstav og ett tall, og minst ett romertall." },
+  { id: "round3", text: "Passordet ditt må inneholde nøyaktig fem av bokstaven «e», og navnet på en europeisk hovedstad." },
+  { id: "nato", text: "Passordet ditt må inneholde minst ett kodeord fra NATOs fonetiske alfabet." },
+  { id: "round5", text: "Passordet ditt må inneholde navnet på en karakter fra Marvel-universet. Engelske og norske navn godkjennes." },
+  { id: "animals", text: "Passordet ditt må inneholde navnet på minst ett av dyrene som vises på bildene. Norske og engelske navn godkjennes." },
+  { id: "timeline", text: "Sett de seks hendelsene i riktig rekkefølge på tidslinjen og trykk «Sjekk tidslinje». Når du løser den, låses et hemmelig ord opp. Passordet ditt må inneholde dette ordet." },
+  { id: "meeting_year", text: "Passordet ditt må inneholde årstallet da personene på bildene møtte hverandre for første gang." },
+  { id: "walter", text: "Fra og med denne runden må du mate Walter minst én gang i HVER runde før du sender inn passordet ditt. Trykk på Walter for å mate ham. Glemmer du å mate Walter i en senere runde, blir passordet ditt ikke godkjent." },
+  { id: "song", text: "Passordet ditt må inneholde navnet på en låt av The Beatles, Queen eller The Killers." },
+  { id: "pokemon", text: "Passordet ditt må inneholde navnet på en Pokémon fra de første 151 i Pokédex." },
+  { id: "egg", text: "Kok et smilende egg. I tillegg må passordet ditt inneholde minst én av de syv siste bokstavene i det norske alfabetet." },
+  { id: "digit_sum_even", text: "Summen av alle sifrene i passordet ditt må være et partall. Hvert siffer adderes separat – for eksempel gir 2018 summen 2 + 0 + 1 + 8 = 11." },
+  { id: "r_count", text: "Passordet ditt må avsluttes med et tall som tilsvarer antall bokstaver «r» i passordet." },
+  { id: "rps", text: "Passordet ditt må inneholde nøyaktig ett av ordene «stein», «saks» eller «papir». Engelske varianter godkjennes også. Når runden avsluttes, går gruppen eller gruppene med flest valg videre; grupper med færre valg blir eliminert. Hvis alle tre er like store, går alle videre." },
+  { id: "two_color_flag", text: "Siri og Amund lurer på hvor de skal dra på bryllupsreise. Passordet ditt må inneholde navnet på et land som har et flagg med kun to farger." },
+  { id: "final_revision", text: "Finale! Gjør en siste revisjon av passordet ditt. Når runden avsluttes, vinner det korteste gyldige passordet. Ved lik lengde avgjør flest stjerner; fortsatt likt gir delt seier." }
+];
+
+function normalizeLoose(value) {
+  return String(value ?? "")
+    .normalize("NFKC")
+    .replaceAll("♀", "female")
+    .replaceAll("♂", "male")
+    .toLocaleLowerCase("nb-NO")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+function containsAnyLoose(password, accepted) {
+  const haystack = normalizeLoose(password);
+  return accepted.some(value => {
+    const needle = normalizeLoose(value);
+    return needle && haystack.includes(needle);
+  });
+}
+
+function hasPokemonHintAccess(playerName) {
+  const name = normalizeLoose(playerName);
+  return POKEMON_HINT_NAMES.some(value => normalizeLoose(value) === name);
+}
+
+function countPlainE(password) {
+  return (String(password ?? "").match(/[eE]/g) || []).length;
+}
+
+function hasUppercaseLetter(password) {
+  return /\p{Lu}/u.test(String(password ?? ""));
+}
+
+function hasRomanNumeralSymbol(password) {
+  return /[ivxlcdm]/iu.test(String(password ?? ""));
+}
+
+function hasLastSevenNorwegianLetter(password) {
+  return /[wxyzæøå]/iu.test(String(password ?? ""));
+}
+
+function hasMarvelCharacter(password) {
+  return containsAnyLoose(password, MARVEL_ACCEPTED_NAMES);
+}
+
+function rCountMatchesEnding(password) {
+  const p = String(password ?? "");
+  const count = (p.match(/[rR]/g) || []).length;
+  const match = p.match(/(\d+)$/);
+  if (!match) return false;
+  return match[1] === String(count);
+}
+
+function digitSumIsEven(password) {
+  const digits = String(password ?? "").match(/\d/g) || [];
+  const sum = digits.reduce((total, digit) => total + Number(digit), 0);
+  return sum % 2 === 0;
+}
+
+const RPS_CHOICES = [
+  { id: "stein", label: "Stein", aliases: ["stein", "rock"] },
+  { id: "saks", label: "Saks", aliases: ["saks", "scissors"] },
+  { id: "papir", label: "Papir", aliases: ["papir", "paper"] }
+];
+
+export function getRpsChoice(password) {
+  const haystack = normalizeLoose(password);
+  const matched = RPS_CHOICES.filter(choice =>
+    choice.aliases.some(alias => {
+      const needle = normalizeLoose(alias);
+      return needle && haystack.includes(needle);
+    })
+  );
+  return matched.length === 1 ? matched[0].id : null;
+}
+
+export function rpsChoiceLabel(choiceId) {
+  return RPS_CHOICES.find(choice => choice.id === choiceId)?.label || choiceId || "";
+}
+
+function parseValue(value) {
+  if (value == null) return value;
+  if (typeof value === "object") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+
 export function defaultMeta() {
   return {
-    // A fresh sessionId is created for every full host reset. The browser uses
-    // this to know when locally cached passwords/progress belong to an old game.
-    sessionId: crypto.randomBytes(12).toString("hex"),
     status: "lobby",
     round: 0,
     roundSeconds: 60,
     deadline: null,
+    winner: null,
     winners: [],
-    winnerLength: null,
-    updatedAt: Date.now(),
-    lastRound: null,
-    roundHistory: []
+    // A new sessionId is created for every full game reset. Clients use this
+    // to distinguish rounds in the same game from a completely new game.
+    sessionId: crypto.randomUUID(),
+    updatedAt: Date.now()
   };
 }
 
-export async function getMeta(redis) {
-  let meta = await redis.get(META_KEY);
-  if (!meta) {
-    meta = defaultMeta();
-    await redis.set(META_KEY, meta);
-    return meta;
+export async function getMeta(redis = redisClient()) {
+  const raw = await redis.get(META_KEY);
+  const parsed = parseValue(raw);
+
+  // First ever load: create and persist one stable session id instead of
+  // generating a different id on every GET request.
+  if (!parsed) {
+    const initial = defaultMeta();
+    await redis.set(META_KEY, JSON.stringify(initial));
+    return initial;
   }
 
-  // One-time migration for a live v4 game created before sessionId existed.
-  if (!meta.sessionId) {
-    meta = { ...meta, sessionId: crypto.randomBytes(12).toString("hex") };
-    await redis.set(META_KEY, meta);
+  // Safe migration for an already-running wedding game created before
+  // sessionId existed. Add an id without resetting players or round state.
+  if (!parsed.sessionId) {
+    const upgraded = { ...parsed, sessionId: crypto.randomUUID(), updatedAt: Date.now() };
+    await redis.set(META_KEY, JSON.stringify(upgraded));
+    return upgraded;
   }
-  return meta;
+
+  return parsed;
 }
 
-export async function setMeta(redis, meta) {
-  meta.updatedAt = Date.now();
-  await redis.set(META_KEY, meta);
-  return meta;
+export async function setMeta(meta, redis = redisClient()) {
+  const value = { ...meta, updatedAt: Date.now() };
+  await redis.set(META_KEY, JSON.stringify(value));
+  return value;
 }
 
-export async function getPlayers(redis) {
+export async function getPlayers(redis = redisClient()) {
   const raw = await redis.hgetall(PLAYERS_KEY);
   if (!raw) return [];
-  return Object.values(raw).map(value => typeof value === "string" ? JSON.parse(value) : value);
+  return Object.entries(raw).map(([id, value]) => {
+    const player = parseValue(value) || {};
+    return { id, ...player };
+  });
 }
 
-export async function getPlayer(redis, id) {
-  const value = await redis.hget(PLAYERS_KEY, id);
-  if (!value) return null;
-  return typeof value === "string" ? JSON.parse(value) : value;
+export async function getPlayer(id, redis = redisClient()) {
+  if (!id) return null;
+  const raw = await redis.hget(PLAYERS_KEY, id);
+  if (!raw) return null;
+  return { id, ...(parseValue(raw) || {}) };
 }
 
-export async function savePlayer(redis, player) {
-  await redis.hset(PLAYERS_KEY, { [player.id]: JSON.stringify(player) });
-  return player;
+export async function savePlayer(player, redis = redisClient()) {
+  const { id, ...rest } = player;
+  await redis.hset(PLAYERS_KEY, { [id]: JSON.stringify(rest) });
 }
 
-export async function resetGame(redis) {
-  await Promise.all([redis.del(META_KEY), redis.del(PLAYERS_KEY), redis.del(NAMES_KEY), redis.del(WINNER_KEY), redis.del(VOTES_KEY)]);
-  const meta = defaultMeta();
-  await setMeta(redis, meta);
-  return meta;
+export function validatePassword(password, round, options = {}) {
+  const maxRound = Math.max(0, Math.min(Number(round) || 0, RULES.length));
+  const failures = [];
+  const p = String(password ?? "");
+
+  if (maxRound >= 1 && !containsAnyLoose(p, GUEST_NAMES)) {
+    failures.push("Passordet må inneholde fornavnet på en gjest i bryllupet.");
+  }
+
+  if (maxRound >= 2) {
+    if (!(hasUppercaseLetter(p) && /\d/.test(p))) {
+      failures.push("Passordet må inneholde minst én stor bokstav og ett tall.");
+    }
+    if (!hasRomanNumeralSymbol(p)) {
+      failures.push("Passordet må inneholde minst ett romertall.");
+    }
+  }
+
+  if (maxRound >= 3) {
+    if (countPlainE(p) !== 5) {
+      failures.push("Passordet må inneholde nøyaktig fem av bokstaven «e».");
+    }
+    if (!containsAnyLoose(p, EUROPEAN_CAPITALS)) {
+      failures.push("Passordet må inneholde navnet på en europeisk hovedstad.");
+    }
+  }
+
+  if (maxRound >= 4 && !containsAnyLoose(p, NATO_WORDS)) {
+    failures.push("Passordet må inneholde minst ett kodeord fra NATOs fonetiske alfabet.");
+  }
+
+  if (maxRound >= 5 && !hasMarvelCharacter(p)) {
+    failures.push("Passordet må inneholde navnet på en karakter fra Marvel-universet.");
+  }
+
+  if (maxRound >= 6 && !containsAnyLoose(p, PICTURE_ANIMALS)) {
+    failures.push("Passordet må inneholde navnet på minst ett av dyrene som vises på bildene.");
+  }
+
+  if (maxRound >= 7 && !containsAnyLoose(p, [TIMELINE_SECRET])) {
+    failures.push("Passordet må inneholde det hemmelige ordet som låses opp i tidslinjen.");
+  }
+
+  if (maxRound >= 8 && !p.includes("2018")) {
+    failures.push("Passordet må inneholde årstallet da personene på bildene møtte hverandre for første gang.");
+  }
+
+  // Regel 9 (Walter) valideres server-side mot spillerens mater-status for runden.
+
+  if (maxRound >= 10 && !containsAnyLoose(p, SONG_TITLES)) {
+    failures.push("Passordet må inneholde navnet på en låt av The Beatles, Queen eller The Killers.");
+  }
+
+  if (maxRound >= 11 && !containsAnyLoose(p, GEN1_POKEMON)) {
+    failures.push("Passordet må inneholde navnet på en Pokémon fra de første 151 i Pokédex.");
+  }
+
+  if (maxRound >= 12 && !hasLastSevenNorwegianLetter(p)) {
+    failures.push("Passordet må inneholde minst én av de syv siste bokstavene i det norske alfabetet.");
+  }
+
+  if (maxRound >= 13 && !digitSumIsEven(p)) {
+    failures.push("Summen av alle sifrene i passordet ditt må være et partall. Hvert siffer adderes separat – for eksempel gir 2018 summen 2 + 0 + 1 + 8 = 11.");
+  }
+
+  if (maxRound >= 14 && !rCountMatchesEnding(p)) {
+    failures.push("Passordet må avsluttes med et tall som tilsvarer antall bokstaver «r» i passordet.");
+  }
+
+  if (maxRound >= 15 && !getRpsChoice(p)) {
+    failures.push("Passordet må inneholde nøyaktig ett av ordene «stein», «saks» eller «papir».");
+  }
+
+  if (maxRound >= 16 && !containsAnyLoose(p, TWO_COLOR_FLAG_COUNTRIES)) {
+    failures.push("Passordet må inneholde navnet på et land som har et flagg med kun to farger.");
+  }
+
+  // Regel 17 er en ren finalerevisjon. Ingen ny innholdsregel legges til.
+
+  return { valid: failures.length === 0, failures };
 }
 
-export function createId() { return crypto.randomBytes(10).toString("hex"); }
-export function createToken() { return crypto.randomBytes(24).toString("hex"); }
+export function publicState(meta, players) {
+  return {
+    meta,
+    rules: RULES.slice(0, meta.round),
+    totalRules: RULES.length,
+    players: players
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        alive: Boolean(p.alive),
+        hasSubmitted: Boolean(p.submission),
+        valid: p.submission ? Boolean(p.valid) : null,
+        eliminatedRound: p.eliminatedRound ?? null,
+        reason: p.reason ?? null
+      }))
+      .sort((a, b) => Number(b.alive) - Number(a.alive) || a.name.localeCompare(b.name))
+  };
+}
 
-export function assertHostKey(value) {
-  const expected = process.env.HOST_KEY || "";
-  if (!expected || !value || value !== expected) {
-    const error = new Error("Feil host-nøkkel.");
+export function assertHostKey(key) {
+  const expected = process.env.HOST_KEY;
+  if (!expected) {
+    const error = new Error("HOST_KEY is not configured in Vercel.");
+    error.statusCode = 500;
+    throw error;
+  }
+  const a = Buffer.from(String(key || ""));
+  const b = Buffer.from(String(expected));
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    const error = new Error("Incorrect host key.");
     error.statusCode = 401;
     throw error;
   }
 }
 
-function containsCountry(value) {
-  const normalized = normalizeForMatch(value);
-  return COUNTRY_KEYS.some(country => normalized.includes(country));
+export function createToken() {
+  return crypto.randomBytes(24).toString("base64url");
 }
 
-function hasTwoUppercaseAndNumber(value) {
-  const text = String(value ?? "");
-  const uppercaseCount = (text.match(/\p{Lu}/gu) || []).length;
-  return uppercaseCount >= 2 && /\d/u.test(text);
+export function createId() {
+  return crypto.randomUUID();
 }
 
-function containsRubikColour(value) {
-  const normalized = normalizeForMatch(value);
-  const colours = [
-    "hvit", "white",
-    "rød", "rod", "red",
-    "blå", "bla", "blue",
-    "grønn", "gronn", "green",
-    "oransje", "orange",
-    "gul", "yellow"
-  ].map(normalizeForMatch);
-  return colours.some(colour => normalized.includes(colour));
+export async function resetGame(redis = redisClient()) {
+  await redis.del(META_KEY);
+  await redis.del(PLAYERS_KEY);
+  await redis.del(NAMES_KEY);
+  return setMeta(defaultMeta(), redis);
 }
 
-function containsDeadlySin(value) {
-  const normalized = normalizeForMatch(value);
-  // Sju dødssynder. Fasiten vises ikke i spillergrensesnittet.
-  const sins = [
-    "hovmod", "pride",
-    "grådighet", "gradighet", "greed", "avarice",
-    "utukt", "lust",
-    "misunnelse", "envy",
-    "fråtseri", "fratseri", "gluttony",
-    "vrede", "wrath",
-    "latskap", "sloth"
-  ].map(normalizeForMatch);
-  return sins.some(sin => normalized.includes(sin));
+export function getRedis() {
+  return redisClient();
 }
 
-function containsPrimeMinisterFirstName(value) {
-  const normalized = normalizeForMatch(value);
-  return PRIME_MINISTER_KEYS.some(name => normalized.includes(name));
-}
-
-function hasMaxOneA(value) {
-  const matches = String(value ?? "").match(/a/gi);
-  return (matches?.length || 0) <= 1;
-}
-
-function hasUnequalVowelsAndConsonants(value) {
-  const letters = [...String(value ?? "").toLocaleLowerCase("nb-NO")].filter(ch => /[a-zæøå]/u.test(ch));
-  const vowels = new Set(["a", "e", "i", "o", "u", "y", "æ", "ø", "å"]);
-  let vowelCount = 0;
-  let consonantCount = 0;
-  for (const ch of letters) {
-    if (vowels.has(ch)) vowelCount += 1;
-    else consonantCount += 1;
-  }
-  return vowelCount !== consonantCount;
-}
-
-const PRIMES_UNDER_100 = new Set([2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97]);
-
-function containsPrimeNumber(value) {
-  const runs = String(value ?? "").match(/\d+/g) || [];
-  return runs.some(run => PRIMES_UNDER_100.has(Number(run)));
-}
-
-function countEmojis(value) {
-  const text = String(value ?? "");
-  // Count visible emoji grapheme clusters, so a family/ZWJ emoji counts as one.
-  const segmenter = new Intl.Segmenter("nb", { granularity: "grapheme" });
-  let count = 0;
-  for (const { segment } of segmenter.segment(text)) {
-    if (/\p{Extended_Pictographic}/u.test(segment) || /\p{Regional_Indicator}{2}/u.test(segment) || /[0-9#*]\uFE0F?\u20E3/u.test(segment)) {
-      count += 1;
-    }
-  }
-  return count;
-}
-
-function containsAtLeastThreeEmojis(value) {
-  return countEmojis(value) >= 3;
-}
-
-function hasMatchingGCountAtEnd(value) {
-  const text = String(value ?? "");
-  const match = text.match(/(\d+)$/u);
-  if (!match) return false;
-  const gCount = (text.match(/g/gi) || []).length;
-  return Number(match[1]) === gCount;
-}
-
-// Runde 9 valideres server-side via egg-tiden, ikke via selve passordteksten.
-
-export function validatePassword(password, activeCount) {
-  const p = String(password ?? "");
-  const failures = [];
-  const active = RULES.slice(0, activeCount);
-  for (const rule of active) {
-    let ok = true;
-    switch (rule.id) {
-      case "country": ok = containsCountry(p); break;
-      case "upper2number": ok = hasTwoUppercaseAndNumber(p); break;
-      case "rubikColourDeadlySin": ok = containsRubikColour(p) && containsDeadlySin(p); break;
-      case "voteVowels": ok = hasUnequalVowelsAndConsonants(p); break;
-      case "primeMinister": ok = containsPrimeMinisterFirstName(p); break;
-      case "maxOneA": ok = hasMaxOneA(p); break;
-      case "primeNumber": ok = containsPrimeNumber(p); break;
-      case "walterEmoji": ok = containsAtLeastThreeEmojis(p); break;
-      case "gCount": ok = hasMatchingGCountAtEnd(p); break;
-      case "eggTimer": ok = true; break;
-      case "firstWins": ok = true; break;
-      default: ok = true;
-    }
-    if (!ok) failures.push(rule.text);
-  }
-  return { valid: failures.length === 0, failures };
-}
+export { META_KEY, PLAYERS_KEY, NAMES_KEY };
