@@ -1,0 +1,11 @@
+Bryllupsleken – gul varsling ved tap av liv
+
+Denne pakken inkluderer hele den siste oppdateringen med:
+- 2 liv gjennom spillet
+- fullskjerms resultatsekvens
+- grønn = videre
+- GUL = mistet ett liv, men fortsatt med
+- rød = eliminert
+- finale = sudden death
+
+Den gule mellomtilstanden har ekstra gul glød og tydeligere visuell kontrast.

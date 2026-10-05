@@ -1,5 +1,5 @@
 {
-  "name": "password-battle-royale-practice",
+  "name": "password-battle-royale-no-twitch",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -10,7 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@upstash/redis": "^1.35.3"
+    "@upstash/redis": "^1.35.3",
+    "marvel-characters": "1.0.3"
   },
   "devDependencies": {
     "vite": "^7.1.3",

@@ -1,0 +1,5 @@
+This project is a streamlined reimplementation inspired by DougDoug's Password Battle Royale.
+Original project: https://github.com/DougDougGithub/Password-Battle-Royale
+Original project license: MIT.
+
+No claim of affiliation or endorsement by DougDoug is made.

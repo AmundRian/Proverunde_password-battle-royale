@@ -1,0 +1,15 @@
+Bryllupsleken – mobil visuell opprydding
+
+Endringer:
+1. Resultatbeskjeden varer ca. 2 sekunder lenger enn før.
+2. Hovedtittelen er nå «Passordet til Siris hjerte» i samme store stil som den gamle tittelen.
+   Den mindre rosa dubletten er fjernet.
+3. Deltakere på mobil slipper toppinfo som «Round open», toppens rundeindikator og toppens timer.
+4. «Players»-seksjonen skjules for deltakere på mobil.
+5. Den lange «Viktig: Bruk kun et passord laget for spillet ...»-teksten er fjernet fra innmeldingssiden.
+6. Liv-boksen viser kun hjerter og antall liv igjen.
+
+Oppdaterte filer:
+- index.html
+- src/main.js
+- src/style.css

@@ -1,0 +1,6 @@
+Passordet til Siris hjerte – mellomrunde/UI-fiks V4
+
+- Deltakere ser ikke lenger regelkortet mellom rundene (results-status).
+- Hosten beholder regelkortet mellom rundene.
+- Alle placeholder-tekster er fjernet fra passordfeltene, inkludert eventuelle readonly-forhåndsvisninger.
+- Tidligere V3-endringer er beholdt.

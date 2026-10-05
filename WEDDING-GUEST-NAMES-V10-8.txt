@@ -1,0 +1,5 @@
+V10.8 – robust guest-name validation
+
+Rule 1 now uses a dedicated normalized matcher for the wedding guest list.
+Explicitly verified accepted names include Ayla and Julia.
+No other game rules or UI behavior changed.

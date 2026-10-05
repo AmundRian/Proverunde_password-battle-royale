@@ -1,0 +1,53 @@
+BRYLLUPSLEK – samlet oppdatering
+
+Denne pakken gjelder KUN hovedleken / bryllupsleken.
+Prøverunden påvirkes ikke.
+
+Ny regelrekkefølge (16 runder):
+1. Gjest
+2. Stor bokstav + tall + romertall
+3. Fem e-er + europeisk hovedstad
+4. NATO-ord
+5. Pannekakeingrediens + siste del av alfabetet
+6. Dyrebilde
+7. Tidslinje – lås opp "noldus"
+8. Året Siri og Amund møttes
+9. Walter
+10. Sang
+11. Pokémon
+12. Mesternes mester
+13. Siffersum er partall
+14. R-regelen
+15. Land med tofarget flagg
+16. Finale – siste revisjon
+
+Tidslinje regel 7:
+- 6 kort presenteres i stokket rekkefølge.
+- Deltakeren drar kortene til riktig rekkefølge og trykker "Sjekk tidslinje".
+- Riktig rekkefølge: Månelandingen, 2017, første møte, 2023, Walter som valp, forlovelse.
+- Ved riktig løsning låses ordet NOLDUS opp med en liten animasjon.
+- Tidslinjen løses kun i runde 7. I senere runder må passordet bare fortsette å inneholde noldus.
+
+Ekstra liv:
+- I runde 1 starter alle med 2 liv.
+- Ugyldig passord i runde 1 bruker ekstralivet i stedet for å eliminere spilleren.
+- Fra runde 2 har alle gjenværende spillere ett liv.
+
+Stjerner:
+- Korteste gyldige passord hver runde får en stjerne.
+- Ved delt korteste får alle i delingen en stjerne.
+- Ugyldige passord får aldri stjerne.
+- Stjerner beholdes etter eliminering og vises mellom rundene.
+- THE SHORT KING kåres ved slutt basert på flest stjerner.
+- I finalen brukes stjerner som tie-breaker ved lik passordlengde.
+
+Regel 15:
+- Land med flagg med kun to farger.
+- Fast godkjent liste med norske/engelske navnevarianter.
+
+Regel 16:
+- Ingen ny innholdsregel.
+- Finalistene får en siste revisjon.
+- Korteste gyldige passord vinner; flest stjerner avgjør ved lik lengde; fortsatt likt gir delt seier.
+
+Eksisterende session-reset-fiks, duplikatlogikk, kopiering, spesialtemaer og øvrige mekanikker er beholdt.

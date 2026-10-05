@@ -1,0 +1,10 @@
+Oppdatering V2 – mobil/visuell deltakeropplevelse
+
+1. Resultat-overlay (videre / mistet liv / eliminert) vises i 8 sekunder, altså 2 sekunder lenger enn forrige fungerende versjon.
+2. Hovedtittelen bruker samme H1-stil/font som før, men teksten er nå «Passordet til Siris hjerte». Ingen ekstra rosa dublett brukes.
+3. På deltaker-mobil skjules hele toppstatusen (Round open / Runde X av Y / topptimer), siden runde og nedtelling allerede vises i hovedinnholdet.
+4. Players-kortet skjules på deltaker-mobil i lobby, under runder og mellom runder. Innmeldingsskjemaet påvirkes ikke. Players vises fortsatt på PC og for host.
+5. Varselteksten om å bruke et eget spillpassord er fjernet fra innmeldingssiden på både mobil og PC.
+
+Sikkerhetsendring:
+Players-kortet har nå en eksplisitt .players-card-klasse, slik at mobil-CSS ikke trenger :has() og ikke kan skjule hele grid/innmeldingsområdet ved et uhell.

@@ -1,0 +1,20 @@
+Bryllupsleken – robust fiks for deltakere ved rundestart
+
+Hva som er rettet:
+1. Regelvisningen er bygget tilbake på den tidligere fungerende strukturen.
+   UX-tilleggene «NY REGEL», gamle regler og antall aktive regler er beholdt.
+2. Deltakersidene henter nå spillstatus med cache deaktivert og unik GET-url.
+   Dette gjør at lobby -> runde 1 ikke kan bli hengende på en gammel status.
+3. Spesialinnhold for dyr, tidslinje, møtebilder, Walter og Pokémon-hint er bevart.
+4. index.html har ny versjonsstreng slik at mobilene tvinges til å hente ny main.js.
+
+Bytt disse filene:
+- index.html
+- src/main.js
+
+Etter Vercel står som Ready:
+- lukk gamle deltakerfaner
+- åpne deltakerlenken på nytt
+- gjør en full reset fra host
+- bli med med testdeltakere
+- start runde 1

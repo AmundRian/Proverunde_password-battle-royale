@@ -1,0 +1,7 @@
+V10.6 – Egg STOPP: ett trykk på mobil
+
+- STOPP-knappen stopper nå timeren umiddelbart på pointerdown for touch/pen.
+- Vanlig click beholdes som fallback for mus og tastatur.
+- stopEggTimer er idempotent, så en eventuell ekstra click-hendelse kan ikke flytte stopptiden.
+- Den separate knappen «Jeg stopper tiden her – lever passord» er uendret.
+- touch-action: manipulation er lagt på eggknappene for mer pålitelig mobilrespons.

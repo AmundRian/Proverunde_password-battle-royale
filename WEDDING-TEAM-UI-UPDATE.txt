@@ -1,0 +1,10 @@
+Bryllupslek – UI + lagmodus
+
+Endringer:
+- Nyeste aktive regel markeres i gult og pulserer rolig for både deltakere og host.
+- Unødvendig deltakertekst er fjernet; knappen heter «Lever passord».
+- Lagmodus gjenkjenner naturlige lagnavn (og, &, /, +, komma, semikolon, eller (2)-(6)).
+- Lag får +1 effektivt tegn per ekstra lagmedlem. Dette påvirker rangering, stjerner og finalelengde, men ikke regelvalidering.
+- Maks 6 personer per lag.
+
+Bytt: index.html, api/game.js, src/main.js, src/style.css

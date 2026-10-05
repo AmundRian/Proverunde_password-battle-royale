@@ -1,0 +1,6 @@
+V10.4
+
+- Runde 12: egg-utfordringen rendres først i deltakerens aktive spillekort, før passord/Walter, slik at den er umiddelbart synlig på mobil.
+- Eggmekanikken beholder samme state, pointer/touch-drag, timer, stopp, retry og bekreft/submit-flyt som prøverunden.
+- Finale: vinnerfeiringen starter umiddelbart når hosten avslutter finalerunden (game_over), og varer 5 sekunder.
+- Tidslinje: hjelpecopy som «Dra eller bruk pilene» og «Dra kortet eller bruk pilene» er ikke med i markup.

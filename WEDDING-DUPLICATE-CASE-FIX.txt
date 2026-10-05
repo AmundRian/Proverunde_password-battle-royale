@@ -1,0 +1,11 @@
+Bryllupsleken – case-sensitive duplikatkontroll
+
+Et passord regnes nå bare som identisk dersom bokstavene har samme store/små bokstaver.
+
+Eksempler:
+- LaOs3 og LaoS3 = ulike passord
+- LaOs3 og LaOs3 = identiske passord
+- Ytre mellomrom ignoreres fortsatt
+
+Kun api/game.js er endret.
+Prøverunden påvirkes ikke.

@@ -1,0 +1,1 @@
+V9: Fjernet overflødig hjelpetekst fra tidslinjen ("Dra eller bruk pilene" og "Dra kortet eller bruk pilene"). Pilknappene og desktop drag-and-drop er beholdt.

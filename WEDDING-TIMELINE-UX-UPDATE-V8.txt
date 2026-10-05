@@ -1,0 +1,7 @@
+Wedding timeline UX update V8
+
+- Timeline cards now have large up/down buttons for reliable reordering on mobile.
+- Desktop drag-and-drop is preserved.
+- Position numbers and saved timeline order update immediately after each move.
+- First/last unavailable direction is disabled automatically.
+- No password rules, answer order, round timing, submit flow, or host logic changed.

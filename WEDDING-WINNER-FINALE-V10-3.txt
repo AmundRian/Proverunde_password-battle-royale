@@ -1,0 +1,9 @@
+V10.3 – Winner finale
+
+- The ordinary final-round result feedback remains visible for 4 seconds.
+- The winner celebration starts after that feedback and lasts 5 seconds.
+- Full-screen celebration: black background, large white text and animated confetti.
+- Shows both winner of Passordet til Siris hjerte and THE SHORT KING.
+- If the same person/team wins both, a DOUBLE CROWN celebration is shown.
+- After the 5-second overlay, a permanent black final-results card remains visible.
+- Includes the V10.2 mobile egg interaction fix and timeline-help-text removal.

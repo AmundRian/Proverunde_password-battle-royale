@@ -1,0 +1,15 @@
+Bryllupsleken – sikker reset av lokal spillerstatus
+
+Denne oppdateringen gjelder kun bryllupsleken.
+
+Bytt disse filene i GitHub-repoet for bryllupsleken:
+- api/_lib/game.js
+- src/main.js
+
+Hva fiksen gjør:
+- Hver full host-reset får en ny unik sessionId.
+- Deltakernes nettlesere oppdager automatisk at en ny spilløkt har startet.
+- Gammelt lokalt spillerobjekt og gammelt passord fjernes etter full reset.
+- Passord beholdes fortsatt mellom runder i samme spill.
+- HOST_KEY beholdes og slettes ikke av denne klientfiksen.
+- Eksisterende Redis-nøkler og alle bryllupsregler er ellers uendret.

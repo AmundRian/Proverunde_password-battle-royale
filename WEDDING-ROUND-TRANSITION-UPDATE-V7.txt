@@ -1,0 +1,6 @@
+V7
+- Fjernet forklaringstekstene under rundens resultater og totalrangering.
+- Resultatbeskjeden varer 4 sekunder (tidligere 6).
+- Deltakere får en 2-sekunders hvit overgangsskjerm med «Runde X/Y» ved start av hver runde.
+- De 2 sekundene trekkes ikke fra rundetiden; serveren starter rundetiden etter overgangen.
+- Gjelder mobil og PC. Host får ikke overgangsskjermen.

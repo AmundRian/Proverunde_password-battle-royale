@@ -1748,6 +1748,18 @@ function containsAnyLoose(password, accepted) {
   });
 }
 
+// Rule 1 uses a dedicated normalized guest-name matcher. Keeping this separate
+// makes additions such as Ayla/Julia deterministic regardless of casing, spaces
+// or punctuation in the submitted password.
+const NORMALIZED_GUEST_NAMES = GUEST_NAMES
+  .map(normalizeLoose)
+  .filter(Boolean);
+
+function containsGuestName(password) {
+  const haystack = normalizeLoose(password);
+  return NORMALIZED_GUEST_NAMES.some(name => haystack.includes(name));
+}
+
 function hasPokemonHintAccess(playerName) {
   const name = normalizeLoose(playerName);
   return POKEMON_HINT_NAMES.some(value => normalizeLoose(value) === name);
@@ -1884,7 +1896,7 @@ export function validatePassword(password, round, options = {}) {
   const failures = [];
   const p = String(password ?? "");
 
-  if (maxRound >= 1 && !containsAnyLoose(p, GUEST_NAMES)) {
+  if (maxRound >= 1 && !containsGuestName(p)) {
     failures.push("Passordet må inneholde fornavnet på en gjest i bryllupet.");
   }
 

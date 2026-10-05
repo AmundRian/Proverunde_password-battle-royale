@@ -1,0 +1,6 @@
+V10.2
+- Runde 12 egg-utfordringen er integrert i samme aktive deltakerskjema som i prøverunden.
+- Samme Pointer Events-håndtering som prøverunden, inkludert preventDefault på mobil-drag.
+- Passordfeltet har stabil id="password-input" og egg-innsending leser direkte fra dette feltet.
+- Tidslinjens synlige dra/flytt-hjelpetekst er fjernet; bare pilknappene/drag-funksjonen er igjen.
+- Frontend-cachebust oppdatert.

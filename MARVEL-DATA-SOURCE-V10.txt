@@ -1,0 +1,12 @@
+Marvel-regel V10
+
+Den lokale godkjenningslisten bygger på pakken "marvel-characters" v1.0.3, som inneholder 1 252 offentlige Marvel-karakternavn hentet fra Marvel API, pluss en supplerende lokal liste med nyere/vanlige navn og norske aliaser.
+
+Aliaslogikk:
+- Hele karakterens navn godkjennes.
+- Navn før komma godkjennes, f.eks. "Bob" fra "Bob, Agent of Hydra".
+- Hovednavn uten parentes godkjennes.
+- Identitetsnavn i parentes godkjennes når de er relevante.
+- Vanlige norske navn/oversettelser er lagt til, bl.a. Hulken, Edderkoppen, Jernmannen, Kaptein Amerika, Falkøye og Sølvsurferen.
+
+Spillet gjør ingen nettverkskall til Marvel under bryllupet.

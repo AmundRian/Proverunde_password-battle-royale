@@ -1,466 +1,753 @@
 import {
-  RULES, NAMES_KEY, WINNER_KEY, VOTES_KEY, assertHostKey, createId, createToken, defaultMeta,
-  getMeta, getPlayer, getPlayers, getRedis, resetGame, savePlayer, setMeta,
-  validatePassword
+  RULES, NAMES_KEY, assertHostKey, createId, createToken, defaultMeta,
+  getMeta, getPlayer, getPlayers, getRedis, resetGame,
+  savePlayer, setMeta, validatePassword, TIMELINE_ORDER, getRpsChoice, rpsChoiceLabel
 } from "./_lib/game.js";
 
 function send(res, status, body) {
-  // Game state changes every few seconds. Never allow a browser/CDN to reuse
-  // an older round status, otherwise one device can remain visually "stuck".
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-  res.setHeader("Pragma", "no-cache");
-  res.setHeader("Expires", "0");
   res.status(status).json(body);
 }
-function fail(message, status = 400) { const e = new Error(message); e.statusCode = status; throw e; }
-function cleanName(v) { return String(v || "").trim().replace(/\s+/g, " ").slice(0, 48); }
-function teamSizeFromName(name) {
-  const value = String(name || "").trim();
-  // Explicit suffix has priority: "Amund (3)".
-  const explicit = value.match(/\(\s*([2-6])\s*\)\s*$/);
+
+function fail(message, status = 400) {
+  const error = new Error(message);
+  error.statusCode = status;
+  throw error;
+}
+
+function cleanName(value) {
+  return String(value || "").trim().replace(/\s+/g, " ").slice(0, 48);
+}
+
+function getHostKey(req, body) {
+  return req.headers["x-host-key"] || body?.hostKey || "";
+}
+
+function duplicateKey(value) {
+  // Duplicate checking is case-sensitive.
+  // Example: "LaOs3" and "LaoS3" are different passwords.
+  // Unicode representation is normalized, and accidental outer whitespace is ignored.
+  return String(value ?? "")
+    .normalize("NFKC")
+    .trim();
+}
+
+function passwordLength(value) {
+  return value == null ? null : [...String(value)].length;
+}
+
+function inferTeamSize(name) {
+  const text = String(name || "").trim();
+  const explicit = text.match(/\(([2-6])\)\s*$/);
   if (explicit) return Number(explicit[1]);
 
-  // Natural team separators: "og", "and", &, /, + and comma.
-  // Consecutive separators are treated as one separator.
-  const parts = value
-    .split(/\s*(?:&|\/|\+|,|\bog\b|\band\b)\s*/iu)
+  const parts = text
+    .split(/\s+(?:og|and)\s+|\s*[&/+;,]\s*/iu)
     .map(part => part.trim())
     .filter(Boolean);
-  return Math.max(1, Math.min(6, parts.length));
+  return Math.max(1, Math.min(6, parts.length >= 2 ? parts.length : 1));
 }
-function teamPenalty(player) { return Math.max(0, Number(player?.teamSize || 1) - 1); }
+
+function teamPenalty(player) {
+  return Math.max(0, Math.min(5, Number(player?.teamSize || 1) - 1));
+}
+
 function effectivePasswordLength(player) {
-  const actual = passwordLength(player?.submission);
-  return actual == null ? null : actual + teamPenalty(player);
+  const raw = passwordLength(player?.submission);
+  return raw == null ? null : raw + teamPenalty(player);
 }
-function hostKey(req, body) { return req.headers["x-host-key"] || body?.hostKey || ""; }
-function normalizedPassword(v) {
-  // Duplicate checking is intentionally case-sensitive.
-  // "LaOs3" and "LaoS3" are different passwords.
-  // We only normalize Unicode representation and trim accidental outer whitespace.
-  return String(v ?? "").normalize("NFKC").trim();
+
+function roundSeconds(value, fallback = 60) {
+  const parsed = Number(value);
+  const safe = Number.isFinite(parsed) ? parsed : fallback;
+  return Math.max(10, Math.min(600, Math.round(safe)));
 }
-function passwordLength(v) { return v == null ? null : [...String(v)].length; }
-function clampSeconds(value) {
-  const n = Number(value);
-  return Math.max(10, Math.min(300, Number.isFinite(n) ? Math.round(n) : 60));
+
+function shortestPasswordWinners(players) {
+  const eligible = players
+    .filter(p => p.alive && p.submission && p.valid !== false)
+    .map(p => ({ name: p.name, length: effectivePasswordLength(p), stars: Number(p.stars || 0) }));
+
+  if (!eligible.length) return { winners: [], length: null, stars: null };
+
+  const shortest = Math.min(...eligible.map(p => p.length));
+  const shortestPlayers = eligible.filter(p => p.length === shortest);
+  const mostStars = Math.max(...shortestPlayers.map(p => p.stars));
+  return {
+    winners: shortestPlayers.filter(p => p.stars === mostStars).map(p => p.name),
+    length: shortest,
+    stars: mostStars
+  };
+}
+
+function shortKingWinners(players) {
+  if (!players.length) return { winners: [], stars: 0 };
+  const maxStars = Math.max(0, ...players.map(p => Number(p.stars || 0)));
+  if (maxStars <= 0) return { winners: [], stars: 0 };
+  return {
+    winners: players.filter(p => Number(p.stars || 0) === maxStars).map(p => p.name),
+    stars: maxStars
+  };
+}
+
+function overallLeaderboard(meta, players) {
+  if (!["results", "game_over"].includes(meta?.status)) return [];
+
+  const ranked = players.map(p => ({
+    id: p.id,
+    name: p.name,
+    alive: Boolean(p.alive),
+    eliminatedRound: p.eliminatedRound ?? null,
+    submitted: Boolean(p.submission),
+    passwordLength: effectivePasswordLength(p),
+    rawPasswordLength: passwordLength(p.submission),
+    teamSize: Number(p.teamSize || 1),
+    teamPenalty: teamPenalty(p),
+    stars: Number(p.stars || 0)
+  })).sort((a, b) => {
+    // Anyone still alive always ranks above an eliminated player.
+    if (a.alive !== b.alive) return Number(b.alive) - Number(a.alive);
+
+    // Among eliminated players, surviving longer is more important than length.
+    if (!a.alive && a.eliminatedRound !== b.eliminatedRound) {
+      return (b.eliminatedRound ?? -1) - (a.eliminatedRound ?? -1);
+    }
+
+    // Within the same status/elimination round, a submitted shorter password ranks higher.
+    if (a.submitted !== b.submitted) return Number(b.submitted) - Number(a.submitted);
+    const aLength = a.passwordLength ?? Number.POSITIVE_INFINITY;
+    const bLength = b.passwordLength ?? Number.POSITIVE_INFINITY;
+    if (aLength !== bLength) return aLength - bLength;
+    if (a.stars !== b.stars) return b.stars - a.stars;
+    return a.name.localeCompare(b.name, "nb");
+  });
+
+  let previousKey = null;
+  let previousRank = 0;
+  return ranked.map((p, index) => {
+    const key = [
+      p.alive ? "alive" : "dead",
+      p.alive ? "" : (p.eliminatedRound ?? ""),
+      p.submitted ? "submitted" : "none",
+      p.passwordLength ?? "none",
+      p.stars ?? 0
+    ].join("|");
+    if (key !== previousKey) {
+      previousRank = index + 1;
+      previousKey = key;
+    }
+    return { ...p, rank: previousRank };
+  });
+}
+
+const FAILURE_LABELS = new Map([
+  ["Passordet må inneholde fornavnet på en gjest i bryllupet.", "Regel 1"],
+  ["Passordet må inneholde minst én stor bokstav og ett tall.", "Regel 2.1"],
+  ["Passordet må inneholde minst ett romertall.", "Regel 2.2"],
+  ["Passordet må inneholde nøyaktig fem av bokstaven «e».", "Regel 3.1"],
+  ["Passordet må inneholde navnet på en europeisk hovedstad.", "Regel 3.2"],
+  ["Passordet må inneholde minst ett kodeord fra NATOs fonetiske alfabet.", "Regel 4"],
+  ["Passordet må inneholde navnet på en karakter fra Marvel-universet.", "Regel 5"],
+  ["Passordet må inneholde navnet på minst ett av dyrene som vises på bildene.", "Regel 6"],
+  ["Passordet må inneholde det hemmelige ordet som låses opp i tidslinjen.", "Regel 7"],
+  ["Passordet må inneholde årstallet da personene på bildene møtte hverandre for første gang.", "Regel 8"],
+  ["Passordet må inneholde navnet på en låt av The Beatles, Queen eller The Killers.", "Regel 10"],
+  ["Passordet må inneholde navnet på en Pokémon fra de første 151 i Pokédex.", "Regel 11"],
+  ["Passordet må inneholde minst én av de syv siste bokstavene i det norske alfabetet.", "Regel 12"],
+  ["Egget ble ikke stoppet innenfor riktig tidsvindu for et smilende egg.", "Regel 12"],
+  ["Summen av alle sifrene i passordet ditt må være et partall. Hvert siffer adderes separat – for eksempel gir 2018 summen 2 + 0 + 1 + 8 = 11.", "Regel 13"],
+  ["Passordet må avsluttes med et tall som tilsvarer antall bokstaver «r» i passordet.", "Regel 14"],
+  ["Passordet må inneholde nøyaktig ett av ordene «stein», «saks» eller «papir».", "Regel 15"],
+  ["Passordet må inneholde navnet på et land som har et flagg med kun to farger.", "Regel 16"]
+]);
+
+function detailForFailure(text) {
+  if (text === "Ingen passord ble levert.") {
+    return { rule: "Ingen innsending", text };
+  }
+  return {
+    rule: FAILURE_LABELS.get(text) || "Regel",
+    text
+  };
+}
+
+function noSubmissionValidation() {
+  return {
+    valid: false,
+    failures: ["Ingen passord ble levert."]
+  };
 }
 
 function publicState(meta, players) {
-  const reveal = ["results", "game_over"].includes(meta.status);
+  const {
+    lastRound = null,
+    roundHistory = [],
+    ...safeMeta
+  } = meta || defaultMeta();
+
+  const revealResults = safeMeta.status === "results" || safeMeta.status === "game_over";
+
   return {
-    meta: { ...meta, lastRound: undefined, roundHistory: undefined },
-    rules: RULES.slice(0, meta.round),
+    meta: safeMeta,
+    rules: RULES.slice(0, safeMeta.round),
     totalRules: RULES.length,
-    roundResults: reveal ? meta.lastRound : null,
-    roundHistory: (meta.roundHistory || []).map(r => ({
-      round: r.round, started: r.started, eliminated: r.eliminated, remaining: r.remaining,
-      shortestPasswordLength: r.shortestPasswordLength
+    roundResults: revealResults ? lastRound : null,
+    leaderboard: revealResults ? overallLeaderboard(safeMeta, players) : [],
+    roundHistory: (roundHistory || []).map(result => ({
+      round: result.round,
+      started: result.started,
+      submitted: result.submitted,
+      eliminated: result.eliminated,
+      remaining: result.remaining,
+      failureCounts: result.failureCounts || [],
+      shortestPasswordLength: result.shortestPasswordLength ?? null,
+      starRecipients: result.starRecipients || []
     })),
-    players: players.map(p => ({
-      id: p.id, name: p.name, alive: !!p.alive, hasSubmitted: !!p.submission,
-      eliminatedRound: p.eliminatedRound ?? null,
-      valid: reveal && p.submission ? !!p.valid : null,
-      reason: reveal ? p.reason || null : null,
-      walterRound: p.walterRound ?? null,
-      walterSteps: Number(p.walterSteps || 0),
-      lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : 2,
-      stars: Math.max(0, Number(p.stars || 0)),
-      teamSize: Math.max(1, Number(p.teamSize || 1)),
-      teamPenalty: teamPenalty(p)
-    })).sort((a,b) => Number(b.alive)-Number(a.alive) || a.name.localeCompare(b.name,"nb"))
+    players: players
+      .map(p => ({
+        id: p.id,
+        name: p.name,
+        alive: Boolean(p.alive),
+        hasSubmitted: Boolean(p.submission),
+        valid: revealResults && p.submission ? Boolean(p.valid) : null,
+        eliminatedRound: p.eliminatedRound ?? null,
+        reason: revealResults ? (p.reason ?? null) : null,
+        failures: revealResults ? (p.failures || []) : [],
+        walterFeedRound: p.walterFeedRound ?? null,
+        walterFeedCount: p.walterFeedCount ?? 0,
+        lives: Number(p.lives ?? 1),
+        teamSize: Number(p.teamSize || 1),
+        teamPenalty: teamPenalty(p),
+        stars: Number(p.stars || 0),
+        timelineSolved: Boolean(p.timelineSolved),
+        lostLifeRound: p.lostLifeRound ?? null
+      }))
+      .sort((a, b) => Number(b.alive) - Number(a.alive) || a.name.localeCompare(b.name, "nb"))
   };
 }
 
-function buildRoundResult(round, starters, finals, starWinnerIds = []) {
-  const starSet = new Set(starWinnerIds);
-  const byId = new Map(finals.map(p => [p.id, p]));
-  const players = starters.map(s => {
-    const p = byId.get(s.id) || s;
+function makeRoundResult(round, playersAtStart, finalPlayers) {
+  const finalById = new Map(finalPlayers.map(p => [p.id, p]));
+  const resultPlayers = playersAtStart.map(startPlayer => {
+    const p = finalById.get(startPlayer.id) || startPlayer;
     return {
-      id: p.id, name: p.name, password: p.submission || null,
-      passwordLength: passwordLength(p.submission), effectivePasswordLength: effectivePasswordLength(p),
-      teamSize: Math.max(1, Number(p.teamSize || 1)), teamPenalty: teamPenalty(p), submitted: !!p.submission,
-      survived: !!p.alive, valid: !!p.valid, reason: p.reason || null, failures: p.failures || [],
-      submittedAt: p.submittedAt || null, lives: Number.isFinite(Number(p.lives)) ? Number(p.lives) : null,
-      stars: Math.max(0, Number(p.stars || 0)), starEarned: starSet.has(p.id)
+      id: p.id,
+      name: p.name,
+      password: p.submission || null,
+      passwordLength: effectivePasswordLength(p),
+      rawPasswordLength: passwordLength(p.submission),
+      teamSize: Number(p.teamSize || 1),
+      teamPenalty: teamPenalty(p),
+      submitted: Boolean(p.submission),
+      submittedAt: p.submittedAt ?? null,
+      survived: Boolean(p.alive),
+      valid: Boolean(p.valid),
+      stars: Number(p.stars || 0),
+      starAwarded: p.starAwardedRound === round,
+      lostLife: p.lostLifeRound === round,
+      failures: (p.failureDetails || []).map(item => ({
+        rule: item.rule,
+        text: item.text
+      }))
     };
-  }).sort((a,b) => {
-    if (a.survived !== b.survived) return Number(b.survived)-Number(a.survived);
-    if (a.valid !== b.valid) return Number(b.valid)-Number(a.valid);
-    if (a.submitted !== b.submitted) return Number(b.submitted)-Number(a.submitted);
-    const lengthDiff = (a.effectivePasswordLength ?? 9999) - (b.effectivePasswordLength ?? 9999);
-    if (lengthDiff) return lengthDiff;
-    const starDiff = Number(b.stars || 0) - Number(a.stars || 0);
-    if (starDiff) return starDiff;
-    return (a.submittedAt ?? 0)-(b.submittedAt ?? 0);
-  });
-  players.forEach((p,i) => p.rank = i+1);
-  const validSubmitted = players.filter(p => p.submitted && (p.valid || p.starEarned));
-  const shortest = validSubmitted.length ? Math.min(...validSubmitted.map(p => p.effectivePasswordLength)) : null;
-  const starWinners = players.filter(p => p.starEarned).map(p => ({
-    id: p.id, name: p.name, passwordLength: p.passwordLength,
-    effectivePasswordLength: p.effectivePasswordLength, teamSize: p.teamSize,
-    teamPenalty: p.teamPenalty, stars: p.stars
-  }));
+  })
+    .sort((a, b) => {
+      if (a.submitted !== b.submitted) return Number(b.submitted) - Number(a.submitted);
+      if (!a.submitted) return a.name.localeCompare(b.name, "nb");
+      return a.passwordLength - b.passwordLength
+        || (a.submittedAt || 0) - (b.submittedAt || 0)
+        || a.name.localeCompare(b.name, "nb");
+    });
+
+  let previousLength = null;
+  let previousRank = 0;
+  let submittedIndex = 0;
+  for (const p of resultPlayers) {
+    if (!p.submitted) {
+      p.rank = null;
+      continue;
+    }
+    submittedIndex += 1;
+    if (p.passwordLength !== previousLength) {
+      previousRank = submittedIndex;
+      previousLength = p.passwordLength;
+    }
+    p.rank = previousRank;
+  }
+
+  for (const p of resultPlayers) delete p.submittedAt;
+
+  const counts = new Map();
+  for (const p of resultPlayers) {
+    if (p.valid) continue;
+    for (const failure of p.failures) {
+      const key = `${failure.rule}\u0000${failure.text}`;
+      const current = counts.get(key) || { ...failure, count: 0 };
+      current.count += 1;
+      counts.set(key, current);
+    }
+  }
+
+  const failureCounts = [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.rule.localeCompare(b.rule, "nb"));
+
   return {
-    round, started: starters.length,
-    submitted: players.filter(p => p.submitted).length,
-    eliminated: players.filter(p => !p.survived).length,
-    remaining: finals.filter(p => p.alive).length,
-    shortestPasswordLength: shortest,
-    starWinners,
-    players: players.map(({submittedAt,...rest}) => rest),
+    round,
+    started: resultPlayers.length,
+    submitted: resultPlayers.filter(p => p.submitted).length,
+    eliminated: resultPlayers.filter(p => !p.survived).length,
+    remaining: finalPlayers.filter(p => p.alive).length,
+    failureCounts,
+    shortestPasswordLength: (() => {
+      const valid = resultPlayers.filter(p => p.submitted && p.valid);
+      return valid.length ? Math.min(...valid.map(p => p.passwordLength)) : null;
+    })(),
+    starRecipients: resultPlayers.filter(p => p.starAwarded).map(p => ({ id: p.id, name: p.name, stars: p.stars, passwordLength: p.passwordLength })),
+    players: resultPlayers,
     closedAt: Date.now()
   };
-}
-
-async function awardShortestPasswordStars(redis, players) {
-  const eligible = players.filter(p => p.submission && p.valid === true);
-  if (!eligible.length) return [];
-  const shortest = Math.min(...eligible.map(p => effectivePasswordLength(p)));
-  const winners = eligible.filter(p => effectivePasswordLength(p) === shortest);
-  for (const p of winners) {
-    p.stars = Math.max(0, Number(p.stars || 0)) + 1;
-    await savePlayer(redis, p);
-  }
-  return winners.map(p => p.id);
 }
 
 export default async function handler(req, res) {
   try {
     const redis = getRedis();
+
     if (req.method === "GET") {
       const [meta, players] = await Promise.all([getMeta(redis), getPlayers(redis)]);
       return send(res, 200, publicState(meta, players));
     }
+
     if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
+
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : (req.body || {});
+    const action = body.action;
     let meta = await getMeta(redis);
 
-    if (body.action === "join") {
-      if (meta.status !== "lobby") fail("Prøverunden har allerede startet.", 409);
+    if (action === "join") {
+      if (meta.status !== "lobby") fail("The game has already started.", 409);
       const name = cleanName(body.name);
-      if (name.length < 2) fail("Skriv inn et kallenavn med minst 2 tegn.");
-      const key = name.toLocaleLowerCase("nb-NO");
-      const id = createId(), token = createToken();
-      const claimed = await redis.hsetnx(NAMES_KEY, key, id);
-      if (!claimed) fail("Dette kallenavnet er allerede i bruk.", 409);
-      const teamSize = teamSizeFromName(name);
-      const p = { id, name, token, teamSize, alive: true, submission: null, valid: null, failures: [], reason: null, submittedAt: null, eliminatedRound: null, walterRound: null, walterSteps: 0, eggSeconds: null, lives: 2, stars: 0 };
-      await savePlayer(redis, p);
+      if (name.length < 2) fail("Please use a name with at least 2 characters.");
+      const nameKey = name.toLocaleLowerCase("nb-NO");
+      const id = createId();
+      const token = createToken();
+      const teamSize = inferTeamSize(name);
+      const claimed = await redis.hsetnx(NAMES_KEY, nameKey, id);
+      if (!claimed) fail("That name is already taken.", 409);
+      const player = {
+        id,
+        name,
+        token,
+        alive: true,
+        submission: null,
+        valid: null,
+        failures: [],
+        failureDetails: [],
+        submittedAt: null,
+        eliminatedRound: null,
+        reason: null,
+        walterFeedRound: null,
+        walterFeedCount: 0,
+        walterFirstFedAt: null,
+        lives: 2,
+        teamSize,
+        stars: 0,
+        starAwardedRound: null,
+        lostLifeRound: null,
+        timelineSolved: false,
+        eggSeconds: null
+      };
+      await savePlayer(player, redis);
       const players = await getPlayers(redis);
-      return send(res, 200, { player: { id, name, token, teamSize }, state: publicState(meta, players) });
+      return send(res, 200, { ok: true, player: { id, name, token, teamSize }, state: publicState(meta, players) });
     }
 
-    if (body.action === "walter_step") {
-      if (meta.status !== "round_open" || meta.round !== 7) fail("Walter-oppgaven gjelder bare i runde 7.", 409);
-      const p = await getPlayer(redis, body.playerId);
-      if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
-      if (!p.alive) fail("Du er allerede eliminert.", 409);
-      const requested = Math.max(0, Math.min(25, Math.floor(Number(body.steps) || 0)));
-      if (p.walterRound !== 7) { p.walterRound = 7; p.walterSteps = 0; }
-      p.walterSteps = Math.max(Number(p.walterSteps || 0), requested);
-      await savePlayer(redis, p);
-      return send(res, 200, { ok: true, walterSteps: p.walterSteps });
-    }
+    if (action === "feed_walter") {
+      if (meta.status !== "round_open") fail("Walter kan bare mates mens en runde pågår.", 409);
+      if (meta.round < 9) fail("Walter-regelen har ikke startet ennå.", 409);
+      if (meta.deadline && Date.now() > meta.deadline) fail("Tiden er ute for denne runden.", 409);
 
-    if (body.action === "vote") {
-      if (meta.status !== "round_open" || meta.round !== 9) fail("Avstemningen gjelder bare i runde 9.", 409);
-      const voter = await getPlayer(redis, body.playerId);
-      if (!voter || voter.token !== body.token) fail("Ugyldig spiller.", 401);
-      if (!voter.alive) fail("Du er allerede eliminert.", 409);
-      const targetId = String(body.targetId || "");
-      const target = await getPlayer(redis, targetId);
-      if (!target || !target.alive) fail("Denne deltakeren kan ikke stemmes på.", 409);
-      if (target.id === voter.id) fail("Du kan ikke stemme på deg selv.", 409);
-      await redis.hset(VOTES_KEY, { [voter.id]: target.id });
-      return send(res, 200, { ok: true, targetId: target.id, targetName: target.name });
-    }
+      const player = await getPlayer(body.playerId, redis);
+      if (!player || player.token !== body.playerToken) fail("Player session not found. Rejoin after the next reset.", 401);
+      if (!player.alive) fail("You have been eliminated.", 409);
 
-    if (body.action === "submit") {
-      if (meta.status !== "round_open") fail("Runden er ikke åpen.", 409);
-      if (meta.roundStartsAt && Date.now() < meta.roundStartsAt) fail("Runden starter om et øyeblikk.", 409);
-      if (meta.deadline && Date.now() > meta.deadline) fail("Tiden er ute. Vent på at hosten avslutter runden.", 409);
-      const p = await getPlayer(redis, body.playerId);
-      if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
-      if (!p.alive) fail("Du er allerede eliminert.", 409);
-      const password = String(body.password ?? "");
-      if (!password) fail("Skriv inn et passord.");
-
-      // Runde 7: Walter-status sendes sammen med selve innleveringen.
-      // Dette gjør mobilklikk robuste selv om bakgrunnssynkronisering er treg.
-      if (meta.round === 7) {
-        const submittedWalterSteps = Math.max(0, Math.min(25, Math.floor(Number(body.walterSteps) || 0)));
-        if (submittedWalterSteps >= 25) {
-          p.walterRound = 7;
-          p.walterSteps = 25;
-        }
-        if (!(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
-          fail("Du må dytte Walter over målstreken før du kan levere i runde 7.", 409);
-        }
+      const now = Date.now();
+      if (player.walterFeedRound !== meta.round) {
+        player.walterFeedRound = meta.round;
+        player.walterFeedCount = 0;
+        player.walterFirstFedAt = now;
       }
+      if (!player.walterFirstFedAt) player.walterFirstFedAt = now;
+      player.walterFeedCount = Math.min(999, Number(player.walterFeedCount || 0) + 1);
+      await savePlayer(player, redis);
 
-      // Runde 10: egg-tiden sendes sammen med passordet. Vi avslører ikke
-      // om tiden var riktig før runden avsluttes. Spilleren kan prøve på nytt
-      // og erstatte innleveringen så lenge runden er åpen.
-      if (meta.round === 10) {
+      return send(res, 200, {
+        ok: true,
+        walterFeedRound: meta.round,
+        walterFeedCount: player.walterFeedCount
+      });
+    }
+
+    if (action === "solve_timeline") {
+      if (meta.status !== "round_open" || meta.round !== 7) fail("Tidslinjen kan bare løses i runde 7.", 409);
+      if (meta.deadline && Date.now() > meta.deadline) fail("Tiden er ute for denne runden.", 409);
+      const player = await getPlayer(body.playerId, redis);
+      if (!player || player.token !== body.playerToken) fail("Player session not found. Rejoin after the next reset.", 401);
+      if (!player.alive) fail("You have been eliminated.", 409);
+      const order = Array.isArray(body.order) ? body.order.map(String) : [];
+      const correct = order.length === TIMELINE_ORDER.length && TIMELINE_ORDER.every((id, index) => order[index] === id);
+      if (!correct) return send(res, 200, { ok: true, solved: false });
+      player.timelineSolved = true;
+      await savePlayer(player, redis);
+      return send(res, 200, { ok: true, solved: true, secret: "noldus" });
+    }
+
+    if (action === "submit") {
+      if (meta.status !== "round_open") fail("Submissions are not open right now.", 409);
+      if (meta.roundStartsAt && Date.now() < meta.roundStartsAt) fail("Runden starter om et øyeblikk.", 409);
+      if (meta.deadline && Date.now() > meta.deadline) fail("Time is up for this round.", 409);
+      const player = await getPlayer(body.playerId, redis);
+      if (!player || player.token !== body.playerToken) fail("Player session not found. Rejoin after the next reset.", 401);
+      if (!player.alive) fail("You have been eliminated.", 409);
+      const password = String(body.password ?? "").slice(0, 200);
+      if (!password) fail("Enter a password first.");
+
+      // Deliberately do NOT tell the player whether the password passes yet.
+      // Validation happens when the host closes the round.
+      if (meta.round === 12) {
         const eggSeconds = Number(body.eggSeconds);
         if (!Number.isFinite(eggSeconds) || eggSeconds < 0 || eggSeconds > 60) {
-          fail("Du må koke egget og stoppe timeren før du kan levere i runde 10.", 409);
+          fail("Du må koke egget og stoppe timeren før du kan levere i runde 12.", 409);
         }
-        p.eggSeconds = Math.round(eggSeconds * 100) / 100;
+        player.eggSeconds = Math.round(eggSeconds * 100) / 100;
       }
 
-      p.submission = password;
-      p.submittedAt = Date.now();
-      p.valid = null; p.failures = []; p.reason = null;
-      await savePlayer(redis, p);
+      player.submission = password;
+      player.valid = null;
+      player.failures = [];
+      player.failureDetails = [];
+      player.submittedAt = Date.now();
+      await savePlayer(player, redis);
 
-      // Round 10 is a race: the first player to submit a password that follows
-      // every active rule wins immediately. Invalid attempts remain spoiler-free
-      // and may be replaced until someone wins or the host closes the round.
-      if (RULES[meta.round - 1]?.id === "firstWins") {
-        const check = validatePassword(password, meta.round);
-        if (check.valid) {
-          const claim = await redis.set(WINNER_KEY, JSON.stringify({ id: p.id, name: p.name, submittedAt: p.submittedAt, password }), { nx: true });
-          if (claim) {
-            const before = await getPlayers(redis);
-            const starters = before.filter(q => q.alive).map(q => ({ ...q }));
-            for (const q of before.filter(q => q.alive)) {
-              if (q.id === p.id) {
-                q.valid = true; q.failures = []; q.reason = null;
-              } else {
-                q.alive = false;
-                q.eliminatedRound = meta.round;
-                q.valid = false;
-                q.failures = [`${p.name} leverte et gyldig passord først.`];
-                q.reason = q.failures[0];
-              }
-              await savePlayer(redis, q);
-            }
-            // Finalerunden avsluttes idet første gyldige passord vinner.
-            // Dermed er vinneren også den eneste gyldige kandidaten til rundestjernen.
-            const winnerCurrent = await getPlayer(redis, p.id);
-            const starWinnerIds = await awardShortestPasswordStars(redis, winnerCurrent ? [winnerCurrent] : []);
-            const finals = await getPlayers(redis);
-            const result = buildRoundResult(meta.round, starters, finals, starWinnerIds);
-            const history = [...(meta.roundHistory || []), result];
-            meta = await setMeta(redis, {
-              ...meta,
-              status: "game_over",
-              deadline: null,
-              lastRound: result,
-              roundHistory: history,
-              winners: [p.name],
-              winnerLength: passwordLength(password)
-            });
-            return send(res, 200, { ok: true, won: true, state: publicState(meta, finals) });
-          } else {
-            // Another valid submission won the atomic race. Make sure a late
-            // overlapping request cannot accidentally overwrite the eliminated state.
-            const winnerRaw = await redis.get(WINNER_KEY);
-            const winner = typeof winnerRaw === "string" ? JSON.parse(winnerRaw) : winnerRaw;
-            const current = await getPlayer(redis, p.id);
-            if (winner?.id && current && winner.id !== current.id) {
-              current.alive = false;
-              current.eliminatedRound = meta.round;
-              current.valid = false;
-              current.failures = [`${winner.name} leverte et gyldig passord først.`];
-              current.reason = current.failures[0];
-              await savePlayer(redis, current);
-            }
-          }
-        }
-      }
-
-      // Neutral response: no spoiler before the host closes the round.
-      return send(res, 200, { ok: true });
+      return send(res, 200, { ok: true, submitted: true });
     }
 
-    if (["start_round","close_round","reset"].includes(body.action)) assertHostKey(hostKey(req, body));
+    assertHostKey(getHostKey(req, body));
 
-    if (body.action === "reset") {
-      meta = await resetGame(redis);
-      return send(res, 200, { ok: true, meta });
-    }
+    if (action === "set_timer") {
+      if (meta.status !== "lobby") fail("Change the timer before starting the game.", 409);
+      const seconds = roundSeconds(body.seconds, meta.roundSeconds || 60);
+      meta = await setMeta({ ...meta, roundSeconds: Math.round(seconds) }, redis);
 
-    if (body.action === "start_round") {
-      if (!['lobby','results'].includes(meta.status)) fail("Kan ikke starte en ny runde nå.", 409);
-      const nextRound = meta.status === "lobby" ? 1 : meta.round + 1;
-      if (nextRound > RULES.length) fail("Alle prøverundene er allerede gjennomført.", 409);
+    } else if (action === "start") {
+      if (meta.status !== "lobby") fail("The game is not in the lobby.", 409);
+      const seconds = roundSeconds(body.seconds, meta.roundSeconds || 60);
       const players = await getPlayers(redis);
-      const alive = players.filter(p => p.alive);
-      if (!alive.length) fail("Ingen spillere er igjen.", 409);
-      if (nextRound === 9) await redis.del(VOTES_KEY);
-      for (const p of alive) {
-        p.submission = null; p.submittedAt = null; p.valid = null; p.failures = []; p.reason = null; p.eggSeconds = null;
-        // To liv gjelder gjennom hele prøverunden. Nye/eldre spillerobjekter
-        // normaliseres til maks to liv, men vi fyller aldri opp tapte liv igjen.
-        if (!Number.isFinite(Number(p.lives))) p.lives = 2;
-        p.lives = Math.min(2, Math.max(1, Number(p.lives)));
-        if (nextRound === 7) { p.walterRound = 7; p.walterSteps = 0; }
-        await savePlayer(redis, p);
+      if (!players.length) fail("At least one player must join first.", 409);
+
+      for (const p of players) {
+        p.alive = true;
+        p.submission = null;
+        p.valid = null;
+        p.failures = [];
+        p.failureDetails = [];
+        p.submittedAt = null;
+        p.eliminatedRound = null;
+        p.reason = null;
+        p.walterFeedRound = null;
+        p.walterFeedCount = 0;
+        p.walterFirstFedAt = null;
+        p.lives = 2;
+        p.stars = 0;
+        p.starAwardedRound = null;
+        p.lostLifeRound = null;
+        p.timelineSolved = false;
+        p.eggSeconds = null;
+        await savePlayer(p, redis);
       }
-      if (RULES[nextRound - 1]?.id === "firstWins") await redis.del(WINNER_KEY);
-      const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
+
       const roundStartsAt = Date.now() + 2000;
-      meta = await setMeta(redis, {
-        ...meta, status: "round_open", round: nextRound, roundSeconds: seconds,
-        roundStartsAt, deadline: Date.now() + (seconds + 4)*1000, winners: [], winnerLength: null, lastRound: null
-      });
-      return send(res, 200, { ok: true, meta });
-    }
+      meta = await setMeta({
+        ...meta,
+        status: "round_open",
+        round: 1,
+        roundSeconds: seconds,
+        roundStartsAt,
+        deadline: Date.now() + (seconds + 4) * 1000,
+        winner: null,
+        winners: [],
+        winningPasswordLength: null,
+        winningStars: null,
+        shortKings: [],
+        shortKingStars: 0,
+        lastRound: null,
+        roundHistory: []
+      }, redis);
 
-    if (body.action === "close_round") {
-      if (meta.status !== "round_open") fail("Runden er ikke åpen.", 409);
+    } else if (action === "close_round") {
+      if (meta.status !== "round_open") fail("There is no open round to close.", 409);
+
       const players = await getPlayers(redis);
-      const starters = players.filter(p => p.alive).map(p => ({...p}));
-      const active = players.filter(p => p.alive);
-      const votesRaw = meta.round === 9 ? (await redis.hgetall(VOTES_KEY) || {}) : {};
-      const votes = Object.fromEntries(Object.entries(votesRaw).map(([voterId, target]) => [voterId, String(target)]));
+      const playersAtStart = players.filter(p => p.alive);
 
-      // Determine the first submitter for each complete password (case-sensitive).
-      const ordered = active.filter(p => p.submission).sort((a,b) => (a.submittedAt||0)-(b.submittedAt||0));
+      const validationById = new Map();
+      for (const p of playersAtStart) {
+        validationById.set(
+          p.id,
+          p.submission ? validatePassword(p.submission, meta.round, { playerName: p.name }) : noSubmissionValidation()
+        );
+      }
+
+      // The first valid player to submit an otherwise identical password keeps it.
+      // Letter case DOES create a different password. Leading/trailing spaces are still ignored.
+      const validPlayers = playersAtStart
+        .filter(p => p.submission && validationById.get(p.id)?.valid)
+        .sort((a, b) => (a.submittedAt || 0) - (b.submittedAt || 0));
+
       const firstByPassword = new Map();
-      for (const p of ordered) {
-        const key = normalizedPassword(p.submission);
-        if (!firstByPassword.has(key)) firstByPassword.set(key, p);
+      for (const p of validPlayers) {
+        const key = duplicateKey(p.submission);
+        if (!firstByPassword.has(key)) firstByPassword.set(key, { id: p.id, name: p.name });
       }
 
-      for (const p of active) {
-        let failures = [];
-        let reason = null;
-        if (!p.submission) {
-          failures = ["Ingen passord ble levert."];
-          reason = failures[0];
-        } else {
-          const check = validatePassword(p.submission, meta.round);
-          failures = [...check.failures];
-          if (meta.round === 9 && !votes[p.id]) {
-            failures.push("Du avga ikke en stemme på en annen deltaker i runde 9.");
+      // Build every ordinary failure first. The group-based rule 15 is resolved only
+      // after we know which otherwise-valid players chose stein/saks/papir.
+      const failureDetailsById = new Map();
+      for (const p of playersAtStart) {
+        const validation = validationById.get(p.id) || noSubmissionValidation();
+        const failureDetails = (validation.failures || []).map(detailForFailure);
+
+        if (meta.round === 7 && !p.timelineSolved) {
+          failureDetails.push({
+            rule: "Regel 7",
+            text: "Du må løse tidslinjen før passordet kan godkjennes i runde 7."
+          });
+        }
+
+        if (meta.round === 12) {
+          const eggSeconds = Number(p.eggSeconds);
+          if (!Number.isFinite(eggSeconds) || eggSeconds < 6 || eggSeconds > 8) {
+            failureDetails.push({
+              rule: "Regel 12",
+              text: "Egget ble ikke stoppet innenfor riktig tidsvindu for et smilende egg."
+            });
           }
-          if (meta.round === 7 && !(p.walterRound === 7 && Number(p.walterSteps || 0) >= 25)) {
-            failures.push("Walter kom ikke over målstreken før passordet ble levert i runde 7.");
+        }
+
+        if (meta.round >= 9) {
+          const fedBeforeFinalSubmission = Boolean(
+            p.walterFeedRound === meta.round &&
+            Number(p.walterFeedCount || 0) >= 1 &&
+            p.walterFirstFedAt &&
+            p.submittedAt &&
+            p.walterFirstFedAt <= p.submittedAt
+          );
+          if (!fedBeforeFinalSubmission) {
+            failureDetails.push({
+              rule: "Regel 9",
+              text: "Du glemte å mate Walter før du leverte passordet denne runden."
+            });
           }
-          if (meta.round === 10) {
-            const eggSeconds = Number(p.eggSeconds);
-            if (!Number.isFinite(eggSeconds) || eggSeconds < 6 || eggSeconds > 8) {
-              failures.push("Egget ble ikke stoppet innenfor riktig tidsvindu for et smilende egg.");
-            }
-          }
-          const first = firstByPassword.get(normalizedPassword(p.submission));
+        }
+
+        if (validation.valid && p.submission) {
+          const first = firstByPassword.get(duplicateKey(p.submission));
           if (first && first.id !== p.id) {
-            failures.push(`Samme passord: ${first.name} leverte dette passordet først.`);
+            failureDetails.push({
+              rule: "Duplikat",
+              text: `${first.name} leverte det samme passordet først.`
+            });
           }
-          reason = failures[0] || null;
         }
 
-        p.valid = failures.length === 0;
-        p.failures = failures;
-        p.reason = reason;
+        failureDetailsById.set(p.id, failureDetails);
+      }
 
-        if (!p.valid) {
-          const currentLives = Math.max(1, Number(p.lives || 2));
+      // Korteste gyldige passord i hver runde får en stjerne. Ugyldige passord teller aldri.
+      const starCandidates = playersAtStart.filter(p => p.submission && (failureDetailsById.get(p.id) || []).length === 0);
+      if (starCandidates.length) {
+        const shortest = Math.min(...starCandidates.map(p => effectivePasswordLength(p)));
+        for (const p of starCandidates.filter(p => effectivePasswordLength(p) === shortest)) {
+          p.stars = Number(p.stars || 0) + 1;
+          p.starAwardedRound = meta.round;
+        }
+      }
+
+      // Regel 15: Stein–saks–papir avgjøres som en gruppeavstemning bare i denne runden.
+      // Selve ordkravet er kumulativt i senere runder, men gruppeutfallet beregnes ikke på nytt.
+      let rpsSummary = null;
+      if (meta.round === 15) {
+        const counts = { stein: 0, saks: 0, papir: 0 };
+        const choiceById = new Map();
+
+        for (const p of playersAtStart) {
+          const failures = failureDetailsById.get(p.id) || [];
+          if (failures.length || !p.submission) continue;
+          const choice = getRpsChoice(p.submission);
+          if (!choice) continue;
+          choiceById.set(p.id, choice);
+          counts[choice] += 1;
+        }
+
+        const maxCount = Math.max(counts.stein, counts.saks, counts.papir);
+        const leaders = maxCount > 0
+          ? Object.keys(counts).filter(choice => counts[choice] === maxCount)
+          : [];
+
+        if (leaders.length) {
+          for (const p of playersAtStart) {
+            const failures = failureDetailsById.get(p.id) || [];
+            if (failures.length) continue;
+            const choice = choiceById.get(p.id);
+            if (!choice || leaders.includes(choice)) continue;
+
+            const leaderText = leaders.map(rpsChoiceLabel).join(" og ");
+            failures.push({
+              rule: "Regel 15",
+              text: `Du valgte ${rpsChoiceLabel(choice)}. ${leaderText} hadde flest valg denne runden.`
+            });
+          }
+        }
+
+        rpsSummary = {
+          counts: ["stein", "saks", "papir"].map(id => ({ id, label: rpsChoiceLabel(id), count: counts[id] })),
+          leaders: leaders.map(id => ({ id, label: rpsChoiceLabel(id) })),
+          maxCount
+        };
+      }
+
+      for (const p of playersAtStart) {
+        const failureDetails = failureDetailsById.get(p.id) || [];
+        const failed = failureDetails.length > 0;
+        const isFinalRound = meta.round >= RULES.length;
+        const currentLives = Math.max(1, Number(p.lives ?? 2));
+        const canUseExtraLife = failed && !isFinalRound && currentLives > 1;
+
+        if (canUseExtraLife) {
           p.lives = currentLives - 1;
-          if (p.lives <= 0) {
-            p.alive = false;
-            p.eliminatedRound = meta.round;
-            p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ditt siste liv.`;
-          } else {
-            p.alive = true;
-            p.reason = `${reason || "Regelen ble ikke oppfylt."} Du mistet ett liv, men er fortsatt med.`;
-          }
-        }
-        await savePlayer(redis, p);
-      }
-
-      // Stjernen deles ut etter at rundens krav er vurdert, men før eventuell
-      // avstemnings-eliminering. Dermed kan en spiller med et gyldig og kortest
-      // passord få stjernen selv om vedkommende deretter stemmes ut i runde 9.
-      const validatedBeforeSpecialElimination = await getPlayers(redis);
-      const starWinnerIds = await awardShortestPasswordStars(
-        redis,
-        validatedBeforeSpecialElimination.filter(p => starters.some(s => s.id === p.id))
-      );
-
-      // Runde 4: passordene vurderes først. Deretter elimineres de to høyest
-      // stemte blant spillerne som ellers ville gått videre. Stemmer på spillere
-      // som allerede røk på passordkravet teller derfor ikke i utslagsdelen.
-      if (meta.round === 9) {
-        const afterPassword = await getPlayers(redis);
-        const eligible = afterPassword.filter(p => p.alive);
-        const eligibleIds = new Set(eligible.map(p => p.id));
-        const starterById = new Map(starters.map(p => [p.id, p]));
-        const voteDetails = new Map(eligible.map(p => [p.id, []]));
-        for (const [voterId, targetId] of Object.entries(votes)) {
-          if (!eligibleIds.has(targetId)) continue;
-          const voter = starterById.get(voterId);
-          if (!voter) continue;
-          voteDetails.get(targetId)?.push(voter.name);
-        }
-
-        const scored = eligible
-          .map(p => ({ p, voters: voteDetails.get(p.id) || [] }))
-          .sort((a,b) => b.voters.length - a.voters.length || a.p.name.localeCompare(b.p.name, "nb"));
-
-        // Opptil to elimineres, og med minst to kvalifiserte spillere blir det
-        // alltid to. Ved stemmelikhet på grensen trekkes tilfeldig mellom de som
-        // står likt, slik at avstemningen fortsatt får nøyaktig to plasser.
-        const chosen = [];
-        let i = 0;
-        while (chosen.length < 2 && i < scored.length) {
-          const count = scored[i].voters.length;
-          const tied = [];
-          while (i < scored.length && scored[i].voters.length === count) tied.push(scored[i++]);
-          const remainingSlots = 2 - chosen.length;
-          if (tied.length <= remainingSlots) {
-            chosen.push(...tied);
-          } else {
-            const pool = [...tied];
-            while (chosen.length < 2 && pool.length) {
-              const pick = Math.floor(Math.random() * pool.length);
-              chosen.push(pool.splice(pick, 1)[0]);
-            }
-          }
-        }
-
-        for (const entry of chosen) {
-          const p = entry.p;
-          p.alive = false;
-          p.lives = 0;
-          p.eliminatedRound = 4;
+          p.alive = true;
           p.valid = false;
-          p.failures = [...(p.failures || []), `Stemmet ut med ${entry.voters.length} stemme${entry.voters.length === 1 ? "" : "r"}.`];
-          p.reason = entry.voters.length
-            ? `Stemmet ut med ${entry.voters.length} stemme${entry.voters.length === 1 ? "" : "r"}: ${entry.voters.join(", ")}.`
-            : "Stemmet ut etter stemmelikhet med 0 stemmer. Ingen stemte direkte på deg.";
-          await savePlayer(redis, p);
+          p.lostLifeRound = meta.round;
+          p.eliminatedRound = null;
+          p.reason = failureDetails.map(item => `${item.rule}: ${item.text}`).join(" · ");
+        } else {
+          p.alive = !failed;
+          p.valid = !failed;
+          if (failed) p.lives = 0;
+          p.eliminatedRound = failed ? meta.round : null;
+          p.reason = failed ? failureDetails.map(item => `${item.rule}: ${item.text}`).join(" · ") : null;
         }
+
+        p.failures = failureDetails.map(item => item.text);
+        p.failureDetails = failureDetails;
+        await savePlayer(p, redis);
       }
 
-      const finals = await getPlayers(redis);
-      const result = buildRoundResult(meta.round, starters, finals, starWinnerIds);
-      const history = [...(meta.roundHistory || []), result];
-      const alive = finals.filter(p => p.alive && p.valid === true && p.submission);
-      const lastRound = meta.round >= RULES.length;
-      let winners = [], winnerLength = null;
-      if (lastRound && alive.length) {
-        const first = [...alive].sort((a,b) => (a.submittedAt || Infinity) - (b.submittedAt || Infinity))[0];
-        if (first) {
-          winners = [first.name];
-          winnerLength = passwordLength(first.submission);
-        }
+      const after = await getPlayers(redis);
+      const survivors = after.filter(p => p.alive);
+      const roundResult = makeRoundResult(meta.round, playersAtStart, after);
+      if (rpsSummary) roundResult.rpsSummary = rpsSummary;
+      const roundHistory = [...(meta.roundHistory || []), roundResult];
+
+      if (meta.round >= RULES.length) {
+        const finalRanking = shortestPasswordWinners(survivors);
+        const shortKings = shortKingWinners(after);
+        meta = await setMeta({
+          ...meta,
+          status: "game_over",
+          deadline: null,
+          winner: finalRanking.winners[0] || null,
+          winners: finalRanking.winners,
+          winningPasswordLength: finalRanking.length,
+          winningStars: finalRanking.stars,
+          shortKings: shortKings.winners,
+          shortKingStars: shortKings.stars,
+          lastRound: roundResult,
+          roundHistory
+        }, redis);
+      } else if (survivors.length === 0) {
+        meta = await setMeta({
+          ...meta,
+          status: "game_over",
+          deadline: null,
+          winner: null,
+          winners: [],
+          winningPasswordLength: null,
+          shortKings: shortKingWinners(after).winners,
+          shortKingStars: shortKingWinners(after).stars,
+          lastRound: roundResult,
+          roundHistory
+        }, redis);
+      } else {
+        meta = await setMeta({
+          ...meta,
+          status: "results",
+          deadline: null,
+          lastRound: roundResult,
+          roundHistory
+        }, redis);
       }
-      meta = await setMeta(redis, {
-        ...meta, status: lastRound ? "game_over" : "results", deadline: null,
-        lastRound: result, roundHistory: history, winners, winnerLength
-      });
-      return send(res, 200, { ok: true, state: publicState(meta, finals) });
+
+    } else if (action === "next_round") {
+      if (meta.status !== "results") fail("Close the current round first.", 409);
+      const seconds = roundSeconds(body.seconds, meta.roundSeconds || 60);
+      const players = await getPlayers(redis);
+      const survivors = players.filter(p => p.alive);
+
+      if (survivors.length === 0 || meta.round >= RULES.length) {
+        const finalRanking = shortestPasswordWinners(survivors);
+        const shortKings = shortKingWinners(players);
+        meta = await setMeta({
+          ...meta,
+          status: "game_over",
+          winner: finalRanking.winners[0] || null,
+          winners: finalRanking.winners,
+          winningPasswordLength: finalRanking.length,
+          winningStars: finalRanking.stars,
+          shortKings: shortKings.winners,
+          shortKingStars: shortKings.stars,
+          deadline: null
+        }, redis);
+      } else {
+        for (const p of survivors) {
+          p.submission = null;
+          p.eggSeconds = null;
+          p.valid = null;
+          p.failures = [];
+          p.failureDetails = [];
+          p.submittedAt = null;
+          p.reason = null;
+          p.walterFeedRound = null;
+          p.walterFeedCount = 0;
+          p.walterFirstFedAt = null;
+          // Behold gjenværende liv mellom rundene.
+          // Når finalen (runde 17) starter, går alle finalister over til sudden death.
+          if (meta.round + 1 >= RULES.length) p.lives = 1;
+          p.lostLifeRound = null;
+          await savePlayer(p, redis);
+        }
+
+        const roundStartsAt = Date.now() + 2000;
+        meta = await setMeta({
+          ...meta,
+          status: "round_open",
+          round: meta.round + 1,
+          roundSeconds: seconds,
+          roundStartsAt,
+          deadline: Date.now() + (seconds + 4) * 1000
+        }, redis);
+      }
+
+    } else if (action === "reset") {
+      meta = await resetGame(redis);
+
+    } else {
+      fail("Unknown action.");
     }
 
-    fail("Ukjent handling.", 400);
+    const players = await getPlayers(redis);
+    return send(res, 200, { ok: true, state: publicState(meta, players) });
+
   } catch (error) {
-    return send(res, error.statusCode || 500, { error: error.message || "Ukjent feil" });
+    console.error(error);
+    return send(res, error.statusCode || 500, { error: error.message || "Unexpected server error" });
   }
 }

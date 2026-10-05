@@ -1,0 +1,26 @@
+Bryllupsleken – to liv + tydelig resultatsekvens
+
+1) Tydelig resultat etter hver runde
+Når hosten avslutter en vanlig runde, får hver deltaker en ca. 4 sekunders fullskjermsvisning:
+- Grønn: DU ER VIDERE
+- Oransje/rød: DU MISTET ETT LIV – MEN DU ER FORTSATT MED
+- Rød: DU ER ELIMINERT
+Ved regelbrudd vises konkret regel/årsak.
+Antall gjenværende hjerter vises også.
+
+2) To liv gjennom spillet
+- Alle starter med 2 liv.
+- Regelbrudd, duplikat eller tap i stein–saks–papir koster ett liv.
+- Har spilleren fortsatt ett liv igjen, fortsetter spilleren.
+- Feiler spilleren med bare ett liv igjen, elimineres spilleren.
+- Finalen (runde 17) er fortsatt sudden death: alle finalister går inn med ett liv.
+
+Liv vises også under aktive runder:
+❤️❤️ = to liv
+❤️🖤 = ett liv
+
+Oppdaterte filer:
+- api/game.js
+- src/main.js
+- src/style.css
+- index.html

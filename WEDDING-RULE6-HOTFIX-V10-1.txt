@@ -1,0 +1,5 @@
+Bryllupsleken V10.1 – regel 6 hotfix
+
+- Gjenoppretter PICTURE_ANIMALS-konstanten som ved en feil falt ut i V10.
+- Regel 6 kan igjen validere de fem dyrene og norske/engelske navnevarianter.
+- Ingen andre spillregler eller UI-funksjoner er endret.

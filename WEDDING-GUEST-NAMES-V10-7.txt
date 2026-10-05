@@ -1,0 +1,4 @@
+V10.7 – guest name update
+
+Added Julia and Ayla to the accepted guest first names for rule 1.
+No other game logic was changed.
