@@ -1,0 +1,10 @@
+V22 – reaksjonsduell, synkronisering og skaleringsoptimalisering
+
+- Serveren sender et felles signalAt-tidspunkt til begge spillere.
+- Klienten estimerer forskjellen mellom lokal klokke og serverklokke fra lav-latency svar.
+- Grønt signal vises lokalt mot det samme serverbestemte tidspunktet.
+- Reaksjonstiden måles lokalt fra det øyeblikket den enkelte skjerm faktisk blir grønn til trykket registreres.
+- Nettverksforsinkelsen etter trykket legges derfor ikke lenger til reaksjonstiden.
+- Tyvstart sendes som negativ lokal tidsdifferanse og avgjøres fortsatt av serveren.
+- Polling er redusert mens signalet allerede er planlagt; telefonen trenger ikke spørre serveren for å gjøre knappen grønn.
+- Spillregler, 2–7 sekunders tilfeldig ventetid, matchmaking, liv og resultatmeldinger er uendret.

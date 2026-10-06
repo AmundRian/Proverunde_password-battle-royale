@@ -49,6 +49,7 @@ function clampSeconds(value) {
 function publicState(meta, players) {
   const reveal = ["results", "game_over"].includes(meta.status);
   return {
+    serverNow: Date.now(),
     meta: { ...meta, lastRound: undefined, roundHistory: undefined },
     rules: RULES.slice(0, meta.round),
     totalRules: RULES.length,
@@ -542,12 +543,24 @@ export default async function handler(req, res) {
         const side = reactionSide(match, p.id);
         if (match[`${side}TapAt`] != null) return send(res, 200, { ok: true, state: publicState(meta, players) });
         const now = Date.now();
-        match[`${side}TapAt`] = now;
-        if (now < Number(match.signalAt)) {
-          match[`${side}Early`] = true;
-          match[`${side}ReactionMs`] = null;
+        const clientDelta = Number(body.reactionMs);
+        const useClientTiming = Number.isFinite(clientDelta) && clientDelta >= -7000 && clientDelta <= 5000;
+        if (useClientTiming) {
+          // The phone measures from the instant its own screen actually turns green.
+          // This keeps post-tap network latency out of the reaction score.
+          const roundedDelta = Math.round(clientDelta);
+          match[`${side}TapAt`] = Number(match.signalAt) + roundedDelta;
+          match[`${side}Early`] = roundedDelta < 0;
+          match[`${side}ReactionMs`] = roundedDelta < 0 ? null : roundedDelta;
         } else {
-          match[`${side}ReactionMs`] = Math.max(0, now - Number(match.signalAt));
+          // Backwards-compatible fallback for an old/stale client.
+          match[`${side}TapAt`] = now;
+          if (now < Number(match.signalAt)) {
+            match[`${side}Early`] = true;
+            match[`${side}ReactionMs`] = null;
+          } else {
+            match[`${side}ReactionMs`] = Math.max(0, now - Number(match.signalAt));
+          }
         }
         const leftDone = match.leftTapAt != null;
         const rightDone = match.rightTapAt != null;

@@ -33,7 +33,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV10");
 localStorage.removeItem("pbrPracticeCopiedPasswordV10");
 localStorage.removeItem("pbrPracticeLastPasswordV11");
 localStorage.removeItem("pbrPracticeCopiedPasswordV11");
-document.documentElement.dataset.practiceBuild = "v21-reaction-registered";
+document.documentElement.dataset.practiceBuild = "v22-reaction-sync";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -105,6 +105,7 @@ function statusText(s) {
 }
 
 async function api(body = null) {
+  const requestStartedAt = Date.now();
   const res = await fetch("/api/game", body ? {
     method: "POST",
     cache: "no-store",
@@ -116,8 +117,9 @@ async function api(body = null) {
   } : { cache: "no-store" });
 
   const data = await res.json().catch(() => ({}));
+  const requestEndedAt = Date.now();
   if (!res.ok) throw new Error(data.error || `Feil (${res.status})`);
-  return data;
+  return stripAndSyncServerTime(data, requestStartedAt, requestEndedAt);
 }
 
 function me() {
@@ -535,6 +537,42 @@ async function refresh() {
 
 let reactionIntroKey = "";
 let reactionIntroUntil = 0;
+let serverClockOffsetMs = 0;
+let bestClockRttMs = Infinity;
+let reactionSignalKey = "";
+let reactionSignalShownPerf = null;
+
+function syncServerClock(serverNow, requestStartedAt, requestEndedAt) {
+  const server = Number(serverNow);
+  if (!Number.isFinite(server)) return;
+  const rtt = Math.max(0, Number(requestEndedAt) - Number(requestStartedAt));
+  const midpoint = (Number(requestStartedAt) + Number(requestEndedAt)) / 2;
+  const offset = server - midpoint;
+  // Prefer the cleanest (lowest-RTT) samples; mildly smooth near-best samples.
+  if (!Number.isFinite(bestClockRttMs) || rtt <= bestClockRttMs) {
+    bestClockRttMs = rtt;
+    serverClockOffsetMs = offset;
+  } else if (rtt <= bestClockRttMs + 40) {
+    serverClockOffsetMs = serverClockOffsetMs * 0.8 + offset * 0.2;
+  }
+}
+
+function serverNowMs() {
+  return Date.now() + serverClockOffsetMs;
+}
+
+function stripAndSyncServerTime(payload, startedAt, endedAt) {
+  if (!payload || typeof payload !== "object") return payload;
+  if (Number.isFinite(Number(payload.serverNow))) {
+    syncServerClock(payload.serverNow, startedAt, endedAt);
+    delete payload.serverNow;
+  }
+  if (payload.state && typeof payload.state === "object" && Number.isFinite(Number(payload.state.serverNow))) {
+    syncServerClock(payload.state.serverNow, startedAt, endedAt);
+    delete payload.state.serverNow;
+  }
+  return payload;
+}
 
 function isReactionRound(nextState = state) {
   return nextState?.meta?.status === "round_open" && nextState?.rules?.[nextState.rules.length - 1]?.id === "reaction";
@@ -652,7 +690,7 @@ function reactionViewHtml(self) {
   }
 
   if (match.phase === "armed") {
-    const green = Number(match.signalAt || 0) > 0 && Date.now() >= Number(match.signalAt);
+    const green = Number(match.signalAt || 0) > 0 && serverNowMs() >= Number(match.signalAt);
     const alreadyTapped = match[`${side}TapAt`] != null;
     return `<section class="card accent reaction-card reaction-live-card">
       <div class="reaction-versus compact">
@@ -702,10 +740,17 @@ function updateReactionPad() {
   const pad = document.querySelector("#reaction-pad");
   if (!(pad instanceof HTMLElement) || !match || match.phase !== "armed") return;
   const side = reactionSide(match, player.id);
+  const attemptKey = `${match.id}:${match.attempt || 1}`;
+  if (attemptKey !== reactionSignalKey) {
+    reactionSignalKey = attemptKey;
+    reactionSignalShownPerf = null;
+  }
   if (match[`${side}TapAt`] != null) return;
-  const go = Number(match.signalAt || 0) > 0 && Date.now() >= Number(match.signalAt);
+  const go = Number(match.signalAt || 0) > 0 && serverNowMs() >= Number(match.signalAt);
+  const wasGo = pad.classList.contains("go");
   pad.classList.toggle("go", go);
   pad.classList.toggle("wait", !go);
+  if (go && !wasGo && reactionSignalShownPerf == null) reactionSignalShownPerf = performance.now();
   const label = pad.querySelector("span");
   if (label) label.textContent = go ? "TRYKK!" : "GJØR DEG KLAR…";
 }
@@ -1175,11 +1220,27 @@ function bind() {
 
   const reactionPad = document.querySelector("#reaction-pad");
   if (reactionPad) {
+    // If a render happens after signalAt, the button may already be green before
+    // the 25 ms tick runs. Start the local stopwatch at the actual paint/bind point.
+    if (reactionPad.classList.contains("go") && reactionSignalShownPerf == null) {
+      reactionSignalShownPerf = performance.now();
+    }
     let tapped = false;
     const tap = async e => {
       if (tapped) return;
       tapped = true;
       e.preventDefault?.();
+      const matchAtTap = reactionMatchFor(player.id);
+      const signalAt = Number(matchAtTap?.signalAt || 0);
+      const isGreenNow = reactionPad.classList.contains("go");
+      let localReactionMs;
+      if (isGreenNow && reactionSignalShownPerf != null) {
+        localReactionMs = Math.max(0, performance.now() - reactionSignalShownPerf);
+      } else {
+        // Negative means a false start. Use synchronized server time so the
+        // server can compare two early taps without adding request latency.
+        localReactionMs = signalAt ? serverNowMs() - signalAt : -7000;
+      }
       reactionPad.setAttribute("disabled", "");
       reactionPad.classList.remove("go", "wait");
       reactionPad.classList.add("registered");
@@ -1191,7 +1252,7 @@ function bind() {
       if (liveNote) liveNote.textContent = `Trykket er registrert. Venter på ${opponentNow?.name || "motstanderen"}…`;
       if (navigator.vibrate) navigator.vibrate(35);
       try {
-        const response = await api({ action: "reaction_tap", playerId: player.id, token: player.token });
+        const response = await api({ action: "reaction_tap", playerId: player.id, token: player.token, reactionMs: Math.round(localReactionMs) });
         if (response?.state) state = response.state;
         error = "";
         render();
@@ -1501,6 +1562,28 @@ function tick() {
 }
 
 setInterval(() => { if (!isReactionRound()) refresh(); }, 2000);
-setInterval(() => { if (isReactionRound()) refresh(); }, 350);
+
+function reactionPollDelay() {
+  if (!isReactionRound() || !player?.id) return 1000;
+  const match = reactionMatchFor(player.id);
+  if (!match) return 500;
+  const side = reactionSide(match, player.id);
+  if (match.finished) return 1200;
+  if (match.phase === "ready" || match.phase === "result") return 300;
+  if (match.phase === "armed") {
+    // Once signalAt is known, the phone does not need polling to turn green;
+    // the 25 ms local tick handles that. Poll faster only after our tap while
+    // waiting for the opponent/result.
+    return match[`${side}TapAt`] != null ? 350 : 1400;
+  }
+  return 600;
+}
+
+async function reactionRefreshLoop() {
+  if (isReactionRound()) await refresh();
+  setTimeout(reactionRefreshLoop, reactionPollDelay());
+}
+
+setTimeout(reactionRefreshLoop, 250);
 setInterval(tick, 25);
 refresh();
