@@ -1,0 +1,8 @@
+Prøverunde V19 – mobilfiks for reaksjonsduell
+
+Endringer fra V18:
+- Reaksjonsduellen rendres som en egen deltakerskjerm, uavhengig av vanlig grid/aside-layout.
+- Mobil-CSS sikrer at reaksjonskort og trykkflate alltid er synlige på små skjermer.
+- Trykkflaten har pointer-, touch-/mouse-fallback og click-fallback for bedre mobilkompatibilitet.
+- Cache-versjonen i index.html er oppdatert til V19.
+- Ingen endringer i serverens reaksjonslogikk, matchmaking, liv eller 2–7 sekunders ventetid.

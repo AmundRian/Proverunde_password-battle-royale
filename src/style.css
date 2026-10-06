@@ -1201,6 +1201,7 @@ body.participant-mode:not([data-participant-phase="active-round"]) .participant-
 }
 .reaction-pad.wait { background: #171a22; color: #fff; }
 .reaction-pad.go { background: #24c96b; color: #06150b; border-color: #79f4a8; box-shadow: 0 0 40px rgba(36,201,107,.28); }
+.reaction-pad.registered { background: #1677ff; color: #fff; border-color: #8fc0ff; box-shadow: 0 0 40px rgba(22,119,255,.32); }
 .reaction-pad:active:not(:disabled) { transform: scale(.992); }
 .reaction-pad:disabled { opacity: 1; cursor: default; }
 .reaction-times {
@@ -1251,4 +1252,41 @@ body.participant-mode:not([data-participant-phase="active-round"]) .participant-
   .reaction-versus span { font-size: 1.1rem; }
   .reaction-pad { min-height: 52vh; border-radius: 20px; }
   .reaction-times { grid-template-columns: 1fr; }
+}
+
+
+/* V19 mobile-safe reaction screen: independent from the normal participant grid. */
+.reaction-participant-main {
+  width: min(760px, calc(100% - 24px));
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 20px 0 28px;
+  display: grid;
+  align-content: center;
+}
+.reaction-participant-shell { width: 100%; min-width: 0; }
+.reaction-participant-shell > .card { width: 100%; margin: 0; }
+@media (max-width: 760px) {
+  .reaction-participant-main {
+    width: 100%;
+    min-height: 100svh;
+    padding: max(12px, env(safe-area-inset-top)) 10px max(12px, env(safe-area-inset-bottom));
+    align-content: stretch;
+  }
+  .reaction-participant-shell { display: grid; min-height: calc(100svh - 24px); align-items: center; }
+  .reaction-participant-shell .reaction-card,
+  .reaction-participant-shell .reaction-bye-card,
+  .reaction-participant-shell .reaction-finished-card {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    min-width: 0;
+  }
+  .reaction-participant-shell .reaction-pad {
+    display: grid !important;
+    width: 100%;
+    min-height: 55svh;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+  }
 }

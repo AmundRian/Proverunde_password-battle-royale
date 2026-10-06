@@ -1,0 +1,8 @@
+Prøverunde V20 – reaksjonsduell feedback
+
+- Motstanderintro vises i 3 sekunder.
+- Etter et trykk skifter reaksjonsflaten umiddelbart fra grønn til blå.
+- Teksten endres til «REGISTRERT».
+- En tydelig statuslinje sier at trykket er registrert og at spillet venter på motstanderen.
+- Mobil gir en kort vibrasjon dersom nettleseren støtter vibrasjon.
+- Spillregler, matchmaking, liv og 2–7 sekunders tilfeldig ventetid er ellers uendret.

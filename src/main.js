@@ -33,7 +33,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV10");
 localStorage.removeItem("pbrPracticeCopiedPasswordV10");
 localStorage.removeItem("pbrPracticeLastPasswordV11");
 localStorage.removeItem("pbrPracticeCopiedPasswordV11");
-document.documentElement.dataset.practiceBuild = "v18-reaction";
+document.documentElement.dataset.practiceBuild = "v20-reaction-feedback";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -574,10 +574,10 @@ function armReactionIntro(nextState = state) {
   const key = `${nextState?.meta?.sessionId || "session"}:${match.id}`;
   if (key === reactionIntroKey) return;
   reactionIntroKey = key;
-  reactionIntroUntil = Date.now() + 3500;
+  reactionIntroUntil = Date.now() + 3000;
   setTimeout(() => {
     if (reactionIntroKey === key && Date.now() >= reactionIntroUntil) render();
-  }, 3600);
+  }, 3050);
 }
 
 function reactionIntroHtml() {
@@ -1081,6 +1081,23 @@ function render() {
   document.body.dataset.participantPhase = hostMode ? "host" : (participantActiveRound ? "active-round" : "not-active-round");
   document.body.classList.toggle("participant-between-rounds", !hostMode && !participantActiveRound);
 
+  // Reaksjonsduellen rendres som en egen deltakerskjerm, uavhengig av den vanlige
+  // grid/aside-layouten. Dette hindrer mobile CSS-regler fra å skjule eller flytte
+  // duellen og gjør samme DOM tilgjengelig på PC og mobil.
+  if (!hostMode && isReactionRound() && player?.id) {
+    const self = me();
+    app.innerHTML = `<main class="reaction-participant-main">
+      ${error ? `<div class="notice bad">${esc(error)}</div>` : ""}
+      ${reactionIntroHtml()}
+      <div class="reaction-participant-shell">
+        ${self ? reactionViewHtml(self) : `<section class="card"><h2>⚡ Reaksjonsduell</h2><p>Synkroniserer kampen…</p></section>`}
+      </div>
+    </main>`;
+    bind();
+    restoreInputState(inputState);
+    return;
+  }
+
   app.innerHTML = `<main>
     <header>
       <div>
@@ -1164,8 +1181,15 @@ function bind() {
       tapped = true;
       e.preventDefault?.();
       reactionPad.setAttribute("disabled", "");
+      reactionPad.classList.remove("go", "wait");
+      reactionPad.classList.add("registered");
       const label = reactionPad.querySelector("span");
       if (label) label.textContent = "REGISTRERT";
+      const liveNote = document.querySelector(".reaction-live-note");
+      const matchNow = reactionMatchFor(player.id);
+      const opponentNow = reactionOpponent(matchNow, player.id);
+      if (liveNote) liveNote.textContent = `Trykket er registrert. Venter på ${opponentNow?.name || "motstanderen"}…`;
+      if (navigator.vibrate) navigator.vibrate(35);
       try {
         const response = await api({ action: "reaction_tap", playerId: player.id, token: player.token });
         if (response?.state) state = response.state;
@@ -1173,7 +1197,13 @@ function bind() {
         render();
       } catch (x) { tapped = false; error = x.message; render(); }
     };
-    reactionPad.addEventListener("pointerdown", tap, { passive: false });
+    if (window.PointerEvent) {
+      reactionPad.addEventListener("pointerdown", tap, { passive: false });
+    } else {
+      reactionPad.addEventListener("touchstart", tap, { passive: false });
+      reactionPad.addEventListener("mousedown", tap);
+    }
+    reactionPad.addEventListener("click", tap);
     reactionPad.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") tap(e); });
   }
 
