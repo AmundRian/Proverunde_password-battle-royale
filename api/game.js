@@ -127,11 +127,197 @@ async function awardShortestPasswordStars(redis, players) {
   return winners.map(p => p.id);
 }
 
+
+function shuffled(values) {
+  const out = [...values];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+function createPongState(players, startAt) {
+  const pool = shuffled(players);
+  const matches = [];
+  while (pool.length >= 2) {
+    const left = pool.shift();
+    const right = pool.shift();
+    matches.push({
+      id: `pong-${left.id.slice(0, 6)}-${right.id.slice(0, 6)}`,
+      leftId: left.id,
+      leftName: left.name,
+      rightId: right.id,
+      rightName: right.name,
+      leftLives: Math.max(1, Number(left.lives || 1)),
+      rightLives: Math.max(1, Number(right.lives || 1)),
+      leftY: 0.5,
+      rightY: 0.5,
+      ball: { x: 0.5, y: 0.5, vx: Math.random() < 0.5 ? -0.34 : 0.34, vy: (Math.random() * 0.22) - 0.11 },
+      lastTick: startAt,
+      finished: false,
+      winnerId: null,
+      loserId: null
+    });
+  }
+  const byes = pool.map(p => ({ id: p.id, name: p.name, lives: Math.max(1, Number(p.lives || 1)) }));
+  return { startAt, matches, byes };
+}
+
+function resetPongBall(match, towardSide) {
+  const speed = 0.34;
+  match.ball = {
+    x: 0.5,
+    y: 0.5,
+    vx: towardSide === "left" ? -speed : speed,
+    vy: (Math.random() * 0.24) - 0.12
+  };
+}
+
+function advancePongMatch(match, dt) {
+  if (match.finished || dt <= 0) return null;
+  const paddleHalf = 0.14;
+  const leftX = 0.085;
+  const rightX = 0.915;
+  const ballRadius = 0.018;
+  let remaining = Math.min(0.5, dt);
+  let goal = null;
+
+  while (remaining > 0 && !goal) {
+    const step = Math.min(0.02, remaining);
+    remaining -= step;
+    const b = match.ball;
+    const oldX = b.x;
+    b.x += b.vx * step;
+    b.y += b.vy * step;
+
+    if (b.y <= ballRadius) {
+      b.y = ballRadius + (ballRadius - b.y);
+      b.vy = Math.abs(b.vy);
+    } else if (b.y >= 1 - ballRadius) {
+      b.y = (1 - ballRadius) - (b.y - (1 - ballRadius));
+      b.vy = -Math.abs(b.vy);
+    }
+
+    if (b.vx < 0 && oldX > leftX && b.x <= leftX && Math.abs(b.y - match.leftY) <= paddleHalf + ballRadius) {
+      b.x = leftX + ballRadius;
+      b.vx = Math.abs(b.vx) * 1.025;
+      b.vy = Math.max(-0.30, Math.min(0.30, b.vy + (b.y - match.leftY) * 0.9));
+    }
+    if (b.vx > 0 && oldX < rightX && b.x >= rightX && Math.abs(b.y - match.rightY) <= paddleHalf + ballRadius) {
+      b.x = rightX - ballRadius;
+      b.vx = -Math.abs(b.vx) * 1.025;
+      b.vy = Math.max(-0.30, Math.min(0.30, b.vy + (b.y - match.rightY) * 0.9));
+    }
+
+    if (b.x < -0.03) goal = "left";
+    if (b.x > 1.03) goal = "right";
+  }
+  return goal;
+}
+
+async function advancePong(meta, players, redis) {
+  if (meta.status !== "round_open" || RULES[meta.round - 1]?.id !== "pong" || !meta.pong) {
+    return { meta, players };
+  }
+
+  const now = Date.now();
+  const playerById = new Map(players.map(p => [p.id, p]));
+  let changed = false;
+  const changedPlayerIds = new Set();
+  const pong = { ...meta.pong, matches: (meta.pong.matches || []).map(m => ({ ...m, ball: { ...(m.ball || {}) } })) };
+
+  if (now >= Number(pong.startAt || 0)) {
+    for (const match of pong.matches) {
+      if (match.finished) continue;
+      const dt = Math.max(0, (now - Number(match.lastTick || pong.startAt || now)) / 1000);
+      match.lastTick = now;
+      const goal = advancePongMatch(match, dt);
+      changed = true;
+      if (!goal) continue;
+
+      if (goal === "left") {
+        match.leftLives = Math.max(0, Number(match.leftLives || 0) - 1);
+        const p = playerById.get(match.leftId);
+        if (p) { p.lives = match.leftLives; changedPlayerIds.add(p.id); }
+        if (match.leftLives <= 0) {
+          match.finished = true;
+          match.winnerId = match.rightId;
+          match.loserId = match.leftId;
+        } else resetPongBall(match, "left");
+      } else {
+        match.rightLives = Math.max(0, Number(match.rightLives || 0) - 1);
+        const p = playerById.get(match.rightId);
+        if (p) { p.lives = match.rightLives; changedPlayerIds.add(p.id); }
+        if (match.rightLives <= 0) {
+          match.finished = true;
+          match.winnerId = match.leftId;
+          match.loserId = match.rightId;
+        } else resetPongBall(match, "right");
+      }
+
+      if (match.finished) {
+        const loser = playerById.get(match.loserId);
+        const winner = playerById.get(match.winnerId);
+        if (loser) {
+          loser.alive = false;
+          loser.lives = 0;
+          loser.valid = false;
+          loser.eliminatedRound = meta.round;
+          loser.reason = `Du tapte Pong-kampen mot ${winner?.name || "motstanderen"}.`;
+          loser.failures = [loser.reason];
+          changedPlayerIds.add(loser.id);
+        }
+        if (winner) {
+          winner.alive = true;
+          winner.valid = true;
+          winner.reason = null;
+          winner.failures = [];
+          changedPlayerIds.add(winner.id);
+        }
+      }
+    }
+  }
+
+  if (changedPlayerIds.size) {
+    for (const p of players) {
+      if (changedPlayerIds.has(p.id)) await savePlayer(redis, p);
+    }
+  }
+
+  const allFinished = pong.matches.every(m => m.finished);
+  if (allFinished) {
+    const winnerIds = new Set([
+      ...pong.matches.map(m => m.winnerId).filter(Boolean),
+      ...(pong.byes || []).map(b => b.id)
+    ]);
+    const winners = players.filter(p => winnerIds.has(p.id));
+    for (const p of winners) {
+      p.alive = true;
+      p.valid = true;
+      await savePlayer(redis, p);
+    }
+    meta = await setMeta(redis, {
+      ...meta,
+      pong,
+      status: "game_over",
+      deadline: null,
+      winners: winners.map(p => p.name),
+      winnerLength: null
+    });
+  } else if (changed) {
+    meta = await setMeta(redis, { ...meta, pong });
+  }
+
+  return { meta, players };
+}
+
 export default async function handler(req, res) {
   try {
     const redis = getRedis();
     if (req.method === "GET") {
-      const [meta, players] = await Promise.all([getMeta(redis), getPlayers(redis)]);
+      let [meta, players] = await Promise.all([getMeta(redis), getPlayers(redis)]);
+      ({ meta, players } = await advancePong(meta, players, redis));
       return send(res, 200, publicState(meta, players));
     }
     if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
@@ -278,6 +464,24 @@ export default async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
 
+
+    if (body.action === "pong_move") {
+      let players = await getPlayers(redis);
+      ({ meta, players } = await advancePong(meta, players, redis));
+      if (meta.status !== "round_open" || RULES[meta.round - 1]?.id !== "pong" || !meta.pong) fail("Pong-runden er ikke aktiv.", 409);
+      const p = await getPlayer(redis, body.playerId);
+      if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
+      const y = Math.max(0.14, Math.min(0.86, Number(body.y)));
+      if (!Number.isFinite(y)) fail("Ugyldig racketposisjon.");
+      const matches = (meta.pong.matches || []).map(m => ({ ...m, ball: { ...(m.ball || {}) } }));
+      const match = matches.find(m => m.leftId === p.id || m.rightId === p.id);
+      if (!match || match.finished) fail("Du har ingen aktiv Pong-kamp.", 409);
+      if (match.leftId === p.id) match.leftY = y;
+      else match.rightY = y;
+      meta = await setMeta(redis, { ...meta, pong: { ...meta.pong, matches } });
+      return send(res, 200, { ok: true, state: publicState(meta, players) });
+    }
+
     if (["start_round","close_round","reset"].includes(body.action)) assertHostKey(hostKey(req, body));
 
     if (body.action === "reset") {
@@ -305,15 +509,19 @@ export default async function handler(req, res) {
       if (RULES[nextRound - 1]?.id === "firstWins") await redis.del(WINNER_KEY);
       const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
       const roundStartsAt = Date.now() + 2000;
+      const pongRound = RULES[nextRound - 1]?.id === "pong";
+      const pong = pongRound ? createPongState(alive, roundStartsAt) : null;
       meta = await setMeta(redis, {
         ...meta, status: "round_open", round: nextRound, roundSeconds: seconds,
-        roundStartsAt, deadline: Date.now() + (seconds + 4)*1000, winners: [], winnerLength: null, lastRound: null
+        roundStartsAt, deadline: pongRound ? null : Date.now() + (seconds + 4)*1000,
+        winners: [], winnerLength: null, lastRound: null, pong
       });
       return send(res, 200, { ok: true, meta });
     }
 
     if (body.action === "close_round") {
       if (meta.status !== "round_open") fail("Runden er ikke åpen.", 409);
+      if (RULES[meta.round - 1]?.id === "pong") fail("Pong-runden avsluttes automatisk når alle kampene er ferdige.", 409);
       const players = await getPlayers(redis);
       const starters = players.filter(p => p.alive).map(p => ({...p}));
       const active = players.filter(p => p.alive);

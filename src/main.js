@@ -33,7 +33,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV10");
 localStorage.removeItem("pbrPracticeCopiedPasswordV10");
 localStorage.removeItem("pbrPracticeLastPasswordV11");
 localStorage.removeItem("pbrPracticeCopiedPasswordV11");
-document.documentElement.dataset.practiceBuild = "v12";
+document.documentElement.dataset.practiceBuild = "v17-pong";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -515,8 +515,24 @@ async function refresh() {
     const previousRound = state?.meta?.round ?? null;
     armResultOverlay(previousStatus, nextState);
     armRoundIntro(previousStatus, previousRound, nextState);
+    const wasPong = isPongRound(state);
+    const oldSelf = player?.id ? state?.players?.find(p => p.id === player.id) : null;
+    const oldMatch = player?.id ? pongMatchFor(player.id, state) : null;
     state = nextState;
     error = "";
+
+    // During an active participant Pong match we refresh state rapidly, but keep
+    // the arena DOM intact so a finger drag is never interrupted by a render.
+    // A completed match does trigger a full render so winner/loser messaging appears.
+    if (!hostMode && wasPong && isPongRound(nextState) && app.innerHTML) {
+      const newSelf = player?.id ? nextState?.players?.find(p => p.id === player.id) : null;
+      const newMatch = player?.id ? pongMatchFor(player.id, nextState) : null;
+      const matchFinishedChanged = Boolean(oldMatch?.finished) !== Boolean(newMatch?.finished);
+      const aliveChanged = Boolean(oldSelf?.alive) !== Boolean(newSelf?.alive);
+      if (matchFinishedChanged || aliveChanged) render();
+      else updatePongDom();
+      return;
+    }
 
     // Don't rebuild the page every two seconds when nothing changed.
     // This also makes typing feel much calmer on phones and slower networks.
@@ -531,6 +547,170 @@ async function refresh() {
   }
 }
 
+
+function isPongRound(nextState = state) {
+  return nextState?.meta?.status === "round_open" && nextState?.rules?.[nextState.rules.length - 1]?.id === "pong";
+}
+
+function pongMatchFor(playerId, nextState = state) {
+  return (nextState?.meta?.pong?.matches || []).find(m => m.leftId === playerId || m.rightId === playerId) || null;
+}
+
+function pongByeFor(playerId, nextState = state) {
+  return (nextState?.meta?.pong?.byes || []).find(b => b.id === playerId) || null;
+}
+
+function pongHearts(lives) {
+  const n = Math.max(0, Math.min(2, Number(lives || 0)));
+  return "❤️".repeat(n) + "🖤".repeat(2 - n);
+}
+
+function pongViewHtml(self) {
+  const match = pongMatchFor(self.id);
+  const bye = pongByeFor(self.id);
+  if (bye) {
+    return `<section class="card rules-card participant-active-rules-card">
+      <div class="card-title"><h2>Pong</h2><span class="round-progress-pill">${state.meta.round}/${state.totalRules}</span></div>
+      ${rulesHtml()}
+    </section>
+    <section class="card winner pong-bye-card">
+      <h2>🎟️ Frirunde!</h2>
+      <p>Det var oddetall spillere, og du ble tilfeldig trukket til frirunde. Du er videre mens de andre spiller Pong.</p>
+      ${lifeHtml(self)}
+    </section>`;
+  }
+  if (!match) {
+    return `<section class="card"><h2>🏓 Pong</h2><p>Venter på motstander…</p></section>`;
+  }
+
+  const amLeft = match.leftId === self.id;
+  const myLives = amLeft ? match.leftLives : match.rightLives;
+  const opponentLives = amLeft ? match.rightLives : match.leftLives;
+  const opponentName = amLeft ? match.rightName : match.leftName;
+  const sideClass = amLeft ? "pong-am-left" : "pong-am-right";
+
+  if (match.finished && match.winnerId === self.id) {
+    return `<section class="card winner final-result-card">
+      <h2>🏓 Du vant Pong-kampen!</h2>
+      <p>Du slo <strong>${esc(opponentName)}</strong>. Venter på at de andre kampene skal bli ferdige…</p>
+      <div class="life-hearts">${pongHearts(myLives)}</div>
+    </section>`;
+  }
+
+  return `<section class="card rules-card participant-active-rules-card">
+    <div class="card-title"><h2>Pong-semifinale</h2><span class="round-progress-pill">${state.meta.round}/${state.totalRules}</span></div>
+    ${rulesHtml()}
+  </section>
+  <section class="card accent pong-card ${sideClass}">
+    <div class="pong-versus">
+      <div><small>Deg</small><strong>${esc(self.name)}</strong><span id="pong-my-lives">${pongHearts(myLives)}</span></div>
+      <b>VS</b>
+      <div><small>Motstander</small><strong>${esc(opponentName)}</strong><span id="pong-opponent-lives">${pongHearts(opponentLives)}</span></div>
+    </div>
+    <p class="pong-help">Dra fingeren opp og ned på banen for å styre racketen. På PC kan du også bruke ↑ og ↓.</p>
+    <div id="pong-arena" class="pong-arena" tabindex="0" role="application" aria-label="Pong-bane">
+      <div class="pong-midline"></div>
+      <div id="pong-left-paddle" class="pong-paddle pong-left"></div>
+      <div id="pong-right-paddle" class="pong-paddle pong-right"></div>
+      <div id="pong-ball" class="pong-ball"></div>
+    </div>
+    <div class="pong-caption"><span>Hvert mål koster ett liv.</span><strong>Førstemann til 0 er ute.</strong></div>
+  </section>`;
+}
+
+function updatePongDom() {
+  if (!isPongRound() || !player?.id) return;
+  const match = pongMatchFor(player.id);
+  if (!match) return;
+  const amLeft = match.leftId === player.id;
+  const myLives = amLeft ? match.leftLives : match.rightLives;
+  const opponentLives = amLeft ? match.rightLives : match.leftLives;
+  const myLivesEl = document.querySelector("#pong-my-lives");
+  const oppLivesEl = document.querySelector("#pong-opponent-lives");
+  if (myLivesEl) myLivesEl.textContent = pongHearts(myLives);
+  if (oppLivesEl) oppLivesEl.textContent = pongHearts(opponentLives);
+
+  const left = document.querySelector("#pong-left-paddle");
+  const right = document.querySelector("#pong-right-paddle");
+  const ball = document.querySelector("#pong-ball");
+  if (left) left.style.top = `${Number(match.leftY || 0.5) * 100}%`;
+  if (right) right.style.top = `${Number(match.rightY || 0.5) * 100}%`;
+  if (ball && match.ball) {
+    const elapsed = Math.max(0, Math.min(0.28, (Date.now() - Number(match.lastTick || Date.now())) / 1000));
+    const x = Math.max(0, Math.min(1, Number(match.ball.x || 0.5) + Number(match.ball.vx || 0) * elapsed));
+    const y = Math.max(0, Math.min(1, Number(match.ball.y || 0.5) + Number(match.ball.vy || 0) * elapsed));
+    ball.style.left = `${x * 100}%`;
+    ball.style.top = `${y * 100}%`;
+  }
+}
+
+let lastPongMoveAt = 0;
+async function sendPongMove(y) {
+  if (!player?.id || !isPongRound()) return;
+  const now = Date.now();
+  if (now - lastPongMoveAt < 70) return;
+  lastPongMoveAt = now;
+  try {
+    const response = await api({ action: "pong_move", playerId: player.id, token: player.token, y });
+    if (response?.state) {
+      state = response.state;
+      updatePongDom();
+    }
+  } catch (e) {
+    if (!String(e.message || "").includes("ingen aktiv Pong-kamp")) error = e.message;
+  }
+}
+
+function bindPongControls() {
+  const arena = document.querySelector("#pong-arena");
+  const self = me();
+  const match = self ? pongMatchFor(self.id) : null;
+  if (!(arena instanceof HTMLElement) || !match || match.finished) return;
+  const amLeft = match.leftId === self.id;
+
+  const moveAtClientY = clientY => {
+    const rect = arena.getBoundingClientRect();
+    const y = Math.max(0.14, Math.min(0.86, (clientY - rect.top) / Math.max(1, rect.height)));
+    const paddle = document.querySelector(amLeft ? "#pong-left-paddle" : "#pong-right-paddle");
+    if (paddle) paddle.style.top = `${y * 100}%`;
+    sendPongMove(y);
+  };
+
+  let dragging = false;
+  arena.addEventListener("pointerdown", e => {
+    dragging = true;
+    arena.setPointerCapture?.(e.pointerId);
+    arena.focus({ preventScroll: true });
+    moveAtClientY(e.clientY);
+    e.preventDefault();
+  });
+  arena.addEventListener("pointermove", e => {
+    if (!dragging) return;
+    moveAtClientY(e.clientY);
+    e.preventDefault();
+  });
+  const stop = e => {
+    dragging = false;
+    try { arena.releasePointerCapture?.(e.pointerId); } catch {}
+  };
+  arena.addEventListener("pointerup", stop);
+  arena.addEventListener("pointercancel", stop);
+  arena.addEventListener("keydown", e => {
+    if (!["ArrowUp", "ArrowDown", "w", "W", "s", "S"].includes(e.key)) return;
+    e.preventDefault();
+    const liveMatch = pongMatchFor(player.id);
+    if (!liveMatch) return;
+    const current = Number(amLeft ? liveMatch.leftY : liveMatch.rightY) || 0.5;
+    const delta = ["ArrowUp", "w", "W"].includes(e.key) ? -0.07 : 0.07;
+    const y = Math.max(0.14, Math.min(0.86, current + delta));
+    if (amLeft) liveMatch.leftY = y; else liveMatch.rightY = y;
+    updatePongDom();
+    sendPongMove(y);
+  });
+
+  updatePongDom();
+}
+
 function rulesHtml() {
   if (!state?.rules?.length) {
     return `<p class="muted">Reglene kommer når hosten starter prøverunden.</p>`;
@@ -538,6 +718,11 @@ function rulesHtml() {
   const latestIndex = state.rules.length - 1;
   const oldRules = state.rules.slice(0, latestIndex);
   const latest = state.rules[latestIndex];
+  if (latest?.id === "pong") {
+    return `<div class="rules-summary"><strong>Pong-runde</strong><span>Passordreglene er satt på pause i denne runden.</span></div>
+      <div class="rules-section-label new-rule-label">NY REGEL</div>
+      <ol class="rules active-rules-list latest-only"><li class="latest-rule"><span>${latestIndex + 1}</span><div>${esc(latest.text)}</div></li></ol>`;
+  }
   return `<div class="rules-summary"><strong>${state.rules.length} regel${state.rules.length === 1 ? "" : "er"} gjelder i denne runden</strong><span>Alle tidligere regler gjelder fortsatt.</span></div>
     ${oldRules.length ? `<div class="rules-section-label old-rules-label">Regler du fortsatt må følge</div><ol class="rules active-rules-list old-rules-list">${oldRules.map((r, i) => `<li><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}</ol>` : ""}
     <div class="rules-section-label new-rule-label">NY REGEL</div>
@@ -588,6 +773,7 @@ function practiceFailuresHtml(failures) {
 
 function playerStatusText(p) {
   if (!p.alive) return `Ute${p.eliminatedRound ? ` · runde ${p.eliminatedRound}` : ""}`;
+  if (isPongRound()) return pongByeFor(p.id) ? "Frirunde" : (pongMatchFor(p.id)?.finished ? "Kamp ferdig" : "Spiller Pong");
   if (state?.meta?.status === "round_open") return p.hasSubmitted ? "Levert" : "Venter";
   if (state?.meta?.status === "results") return "Videre";
   if (state?.meta?.status === "game_over") return "Finalist";
@@ -684,6 +870,10 @@ function playerView() {
     </section>`;
   }
 
+  if (isPongRound() && self.alive) {
+    return pongViewHtml(self);
+  }
+
   if (state.meta.status === "round_open" && self.alive) {
     const starter = copiedPassword || lastOwnPassword || "";
     const walterDone = state.meta.round !== 7 || walterSteps() >= 25;
@@ -722,6 +912,12 @@ function playerView() {
     </section>`;
   }
 
+  if (isPongRound() && !self.alive) {
+    const match = pongMatchFor(self.id);
+    const opponent = match ? (match.leftId === self.id ? match.rightName : match.leftName) : "motstanderen";
+    return `<section class="card danger final-result-card"><h2>💥 Du tapte Pong-kampen</h2><p>Du gikk tom for liv mot <strong>${esc(opponent)}</strong> og er ute av prøverunden. Du kan fortsatt følge med mens de andre kampene avsluttes.</p></section>`;
+  }
+
   if (state.meta.status === "round_open" && !self.alive) {
     return `<section class="card danger"><h2>Eliminert</h2><p>Du er ute av prøverunden, men kan fortsatt følge med.</p></section>`;
   }
@@ -745,6 +941,20 @@ function playerView() {
     const shortKingText = shortKing.winners.length
       ? `<div class="short-king-final"><span>⭐</span><div><small>THE SHORT KING${shortKing.winners.length > 1 ? "S" : ""}</small><strong>${esc(shortKing.winners.map(p => p.name).join(" & "))}</strong><p>${shortKing.maxStars} stjerne${shortKing.maxStars === 1 ? "" : "r"}</p></div></div>`
       : "";
+
+    if (state.meta.round === state.totalRules && state.rules?.[state.rules.length - 1]?.id === "pong") {
+      const bye = pongByeFor(self.id);
+      const match = pongMatchFor(self.id);
+      if (won && bye) {
+        return `<section class="card winner final-result-card"><h2>🎟️ Du fikk frirunde!</h2><p>Du ble tilfeldig trukket til frirunde og er videre fra Pong-testen.</p>${shortKingText}</section>`;
+      }
+      if (won) {
+        return `<section class="card winner final-result-card"><h2>🏓 Du vant Pong-kampen!</h2><p>Du slo <strong>${esc(match ? (match.leftId === self.id ? match.rightName : match.leftName) : "motstanderen")}</strong> og er videre.</p>${shortKingText}</section>`;
+      }
+      if (match?.loserId === self.id) {
+        return `<section class="card danger final-result-card"><h2>💥 Du tapte Pong-kampen</h2><p>Du gikk tom for liv mot <strong>${esc(match.leftId === self.id ? match.rightName : match.leftName)}</strong> og er ute av prøverunden.</p>${shortKingText}</section>`;
+      }
+    }
 
     if (won) {
       return `<section class="card winner final-result-card">
@@ -772,6 +982,19 @@ function playerView() {
   return `<section class="card accent"><h2>You're in</h2><p>Du er med som <strong>${esc(self.name)}</strong>.</p>${Number(self.teamSize || 1) > 1 ? `<div class="team-badge">👥 Lag på ${self.teamSize} · +${Number(self.teamPenalty || self.teamSize - 1)} tegn</div>` : ""}</section>`;
 }
 
+
+function pongHostHtml() {
+  const pong = state?.meta?.pong;
+  if (!pong) return "";
+  const matchRows = (pong.matches || []).map(m => `<div class="pong-host-match ${m.finished ? "finished" : ""}">
+    <span>${esc(m.leftName)} ${pongHearts(m.leftLives)}</span>
+    <b>${m.finished ? "FERDIG" : "VS"}</b>
+    <span>${pongHearts(m.rightLives)} ${esc(m.rightName)}</span>
+  </div>`).join("");
+  const byeRows = (pong.byes || []).map(b => `<div class="pong-host-bye">🎟️ ${esc(b.name)} har frirunde</div>`).join("");
+  return `<div class="pong-host-panel"><strong>🏓 Pong-kamper</strong>${matchRows || "<p>Ingen kamper.</p>"}${byeRows}</div>`;
+}
+
 function hostView() {
   if (!hostKey) {
     return `<section class="card host host-login">
@@ -792,12 +1015,13 @@ function hostView() {
   return `<section class="card host host-card">
     <div class="eyebrow">HOST CONTROLS</div>
     <h2 style="margin:.35rem 0 14px;">Prøverunden</h2>
-    ${state.meta.status === "round_open" ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
-    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `<label>Rundetid for runde ${Math.min(round + 1, state.totalRules)} (sekunder)
+    ${state.meta.status === "round_open" && !isPongRound() ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
+    ${isPongRound() ? pongHostHtml() : ""}
+    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `${round + 1 < state.totalRules ? `<label>Rundetid for runde ${Math.min(round + 1, state.totalRules)} (sekunder)
       <input id="round-seconds" type="number" min="10" max="300" value="${state.meta.roundSeconds || 60}">
-    </label>
-    <div class="actions"><button id="start-round">${round === 0 ? "Start game" : "Start next round"}</button></div>` : ""}
-    ${state.meta.status === "round_open" ? `<div class="actions"><button id="close-round">Close round now</button></div>` : ""}
+    </label>` : `<div class="feedback good"><strong>Neste runde: PONG</strong><br>Spillerne matches tilfeldig. Gjenværende liv blir Pong-liv.</div>`}
+    <div class="actions"><button id="start-round">${round === 0 ? "Start game" : (round + 1 === state.totalRules ? "Start Pong-runde" : "Start next round")}</button></div>` : ""}
+    ${state.meta.status === "round_open" && !isPongRound() ? `<div class="actions"><button id="close-round">Close round now</button></div>` : ""}
     <div class="actions"><button id="reset" class="danger-button">Reset entire game</button></div>
     <p class="muted tiny">Player link: <span class="mono">${esc(location.origin + location.pathname)}</span></p>
   </section>`;
@@ -930,6 +1154,7 @@ function bind() {
     passwordInput.setAttribute("autocomplete", "off");
   }
   setupParticipantPasswordDisplay();
+  bindPongControls();
 
   const nicknameInput = document.querySelector("#nickname-input");
   const teamHint = document.querySelector("#team-hint");
@@ -1203,6 +1428,7 @@ function bind() {
 }
 
 function tick() {
+  if (isPongRound()) updatePongDom();
   const startOverlay = document.querySelector(".round-start-overlay");
   if (startOverlay && !roundIntroActive()) {
     startOverlay.remove();
@@ -1224,5 +1450,6 @@ function tick() {
 }
 
 setInterval(refresh, 2000);
-setInterval(tick, 250);
+setInterval(() => { if (isPongRound()) refresh(); }, 420);
+setInterval(tick, 60);
 refresh();

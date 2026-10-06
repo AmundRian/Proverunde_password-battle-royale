@@ -1,0 +1,22 @@
+PRACTICE PONG EXPERIMENT V17
+
+Basert på full V16.
+
+Ny runde 6: PONG
+- Alle fem eksisterende passordrunder er uendret.
+- Overlevende etter runde 5 matches tilfeldig to og to.
+- Ved oddetall får én tilfeldig deltaker frirunde.
+- Hver spiller starter Pong-kampen med akkurat antall liv vedkommende har igjen.
+- Hvert innslupne mål koster ett liv.
+- Ved 0 liv taper spilleren og elimineres.
+- Vinneren av hver kamp går videre; i denne prøveversjonen avsluttes testen når alle Pong-kampene er ferdige.
+- Mobil: racket styres ved å dra finger vertikalt på banen.
+- PC: dra med mus eller bruk pil opp/ned når banen har fokus.
+
+Tekniske kontroller utført:
+- JavaScript-syntaks kontrollert for src/main.js, api/game.js og api/_lib/game.js.
+- Test av tilfeldig pairing/bye: 3 spillere -> 1 kamp + 1 bye.
+- Test av paddle-kollisjon og mål.
+- Test av 1-livs spiller som slipper inn mål -> 0 liv, eliminert, motstander registrert som vinner.
+
+Dette er en eksperimentell prototype for å teste Pong-mekanikken før eventuell innføring i bryllupsleken.

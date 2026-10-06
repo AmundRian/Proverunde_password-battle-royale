@@ -15,7 +15,8 @@ export const RULES = [
   { id: "upper2number", text: "Passordet ditt må inneholde minst to store bokstaver og minst ett tall." },
   { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
-  { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." }
+  { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
+  { id: "pong", text: "PONG! Du blir tilfeldig matchet mot en annen deltaker. Hvert mål du slipper inn koster ett av livene du har igjen. Førstemann til 0 liv taper og er ute." }
 ];
 
 // Based on the FN-sambandet country overview, plus English country names and common variants.
