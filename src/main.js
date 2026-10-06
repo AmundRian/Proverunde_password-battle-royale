@@ -33,7 +33,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV10");
 localStorage.removeItem("pbrPracticeCopiedPasswordV10");
 localStorage.removeItem("pbrPracticeLastPasswordV11");
 localStorage.removeItem("pbrPracticeCopiedPasswordV11");
-document.documentElement.dataset.practiceBuild = "v20-reaction-feedback";
+document.documentElement.dataset.practiceBuild = "v21-reaction-registered";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -660,7 +660,7 @@ function reactionViewHtml(self) {
         <b>VS</b>
         <div><strong>${esc(opponent?.name || "—")}</strong><span>${reactionHearts(oppLives)}</span></div>
       </div>
-      <button id="reaction-pad" class="reaction-pad ${green ? "go" : "wait"}" type="button" ${alreadyTapped ? "disabled" : ""}>
+      <button id="reaction-pad" class="reaction-pad ${alreadyTapped ? "registered" : (green ? "go" : "wait")}" type="button" ${alreadyTapped ? "disabled" : ""}>
         <span>${alreadyTapped ? "REGISTRERT" : (green ? "TRYKK!" : "GJØR DEG KLAR…")}</span>
       </button>
       <p class="reaction-live-note">${alreadyTapped ? `Venter på ${esc(opponent?.name || "motstanderen")}…` : "Vent på grønt signal."}</p>

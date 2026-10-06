@@ -1,0 +1,5 @@
+V21 – reaksjonsduell: registrert-visning
+
+- Når en deltaker har trykket på reaksjonsflaten, forblir flaten blå med teksten «REGISTRERT» så lenge forsøket fortsatt venter på motstanderen.
+- Fargen beholdes også etter neste polling/render, i stedet for å gå tilbake til grønn/mørk.
+- Ingen serverlogikk, matchmaking, liv, ventetid eller resultatregler er endret.
