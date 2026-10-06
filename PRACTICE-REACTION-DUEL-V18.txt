@@ -1,0 +1,18 @@
+Prøverunde V18 – reaksjonsduell-prototype
+
+- De fem eksisterende passordrundene er beholdt.
+- Ny runde 6 er en reaksjonsduell.
+- Gjenværende deltakere matches tilfeldig to og to.
+- Oddetall gir én tilfeldig frirunde.
+- Spilleren tar med seg gjenværende liv inn i duellen.
+- Svart motstanderintro viser motstanderens navn i gult med tilfeldig emoji.
+- Begge må trykke «Jeg er klar» før første forsøk.
+- Mellom hvert forsøk må begge trykke «Klar for neste».
+- Signalets ventetid trekkes på nytt mellom 2 og 7 sekunder og holdes tydelig forskjellig fra forrige forsøk.
+- Når feltet blir grønt trykker spilleren så raskt som mulig.
+- Begge reaksjonstider vises etter forsøket. Tyvstart vises som «FOR TIDLIG».
+- Taperen mister ett liv. Ved 0 liv er spilleren eliminert.
+- Eliminasjonsmeldingen viser navnet på spilleren som slo deg ut.
+- Reaksjonsrunden avsluttes automatisk når alle dueller er ferdige.
+
+Dette er en eksperimentell prøverunde-versjon. Bryllupsleken er ikke endret.

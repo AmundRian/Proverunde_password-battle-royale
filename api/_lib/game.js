@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 
 // Practice game v2: separate namespace from both the wedding game and the old practice rules.
 // Wedding game uses pbr:* and the previous practice version used pbr-practice:v1:*.
-const PREFIX = "pbr-practice:v6:";
+const PREFIX = "pbr-practice:v7-reaction:";
 export const META_KEY = `${PREFIX}meta`;
 export const PLAYERS_KEY = `${PREFIX}players`;
 export const NAMES_KEY = `${PREFIX}names`;
@@ -16,7 +16,7 @@ export const RULES = [
   { id: "rubikColourDeadlySin", text: "Passordet ditt må inneholde en av fargene på en klassisk Rubiks kube. Passordet ditt må også inneholde en av de syv dødssyndene." },
   { id: "primeMinister", text: "Passordet ditt må inneholde fornavnet på en av Norges statsministre." },
   { id: "maxOneA", text: "Passordet ditt kan kun inneholde én av bokstaven «a» (A/a)." },
-  { id: "pong", text: "PONG! Du blir tilfeldig matchet mot en annen deltaker. Hvert mål du slipper inn koster ett av livene du har igjen. Førstemann til 0 liv taper og er ute." }
+  { id: "reaction", text: "Reaksjonsduell! Du blir tilfeldig matchet mot en annen deltaker. Når skjermen blir grønn, trykk så raskt du kan. Taperen av hvert forsøk mister ett liv. Førstemann til 0 liv er eliminert." }
 ];
 
 // Based on the FN-sambandet country overview, plus English country names and common variants.
