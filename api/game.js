@@ -49,7 +49,6 @@ function clampSeconds(value) {
 function publicState(meta, players) {
   const reveal = ["results", "game_over"].includes(meta.status);
   return {
-    serverNow: Date.now(),
     meta: { ...meta, lastRound: undefined, roundHistory: undefined },
     rules: RULES.slice(0, meta.round),
     totalRules: RULES.length,
@@ -128,221 +127,11 @@ async function awardShortestPasswordStars(redis, players) {
   return winners.map(p => p.id);
 }
 
-
-const REACTION_EMOJIS = ["🐸","🦆","🐒","🦖","🐔","🦀","🐧","🤡","👽","🐝","🦊","🐙"];
-const REACTION_LOCK_KEY = "pbr-practice:v7-reaction:reaction-lock";
-
-function shuffled(values) {
-  const out = [...values];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
-function randomReactionWaitMs(previous = null) {
-  let next = 2000 + Math.floor(Math.random() * 5001);
-  const prev = Number(previous);
-  if (Number.isFinite(prev) && Math.abs(next - prev) < 500) {
-    next = next <= 4500 ? Math.min(7000, next + 750) : Math.max(2000, next - 750);
-  }
-  return next;
-}
-
-function randomEmoji() {
-  return REACTION_EMOJIS[Math.floor(Math.random() * REACTION_EMOJIS.length)];
-}
-
-function createReactionState(players) {
-  const pool = shuffled(players);
-  const matches = [];
-  while (pool.length >= 2) {
-    const left = pool.shift();
-    const right = pool.shift();
-    matches.push({
-      id: `reaction-${left.id.slice(0,6)}-${right.id.slice(0,6)}`,
-      leftId: left.id,
-      leftName: left.name,
-      leftEmoji: randomEmoji(),
-      rightId: right.id,
-      rightName: right.name,
-      rightEmoji: randomEmoji(),
-      leftLives: Math.max(1, Number(left.lives || 1)),
-      rightLives: Math.max(1, Number(right.lives || 1)),
-      attempt: 1,
-      phase: "ready",
-      leftReady: false,
-      rightReady: false,
-      signalAt: null,
-      waitMs: null,
-      leftTapAt: null,
-      rightTapAt: null,
-      leftReactionMs: null,
-      rightReactionMs: null,
-      leftEarly: false,
-      rightEarly: false,
-      resultAt: null,
-      lastWinnerId: null,
-      lastLoserId: null,
-      finished: false,
-      winnerId: null,
-      loserId: null
-    });
-  }
-  const byes = pool.map(p => ({ id: p.id, name: p.name, lives: Math.max(1, Number(p.lives || 1)), emoji: randomEmoji() }));
-  return { matches, byes, createdAt: Date.now() };
-}
-
-function reactionMatchFor(reaction, playerId) {
-  return (reaction?.matches || []).find(m => m.leftId === playerId || m.rightId === playerId) || null;
-}
-
-function reactionSide(match, playerId) {
-  if (match.leftId === playerId) return "left";
-  if (match.rightId === playerId) return "right";
-  return null;
-}
-
-function resetReactionAttempt(match) {
-  match.attempt = Number(match.attempt || 1) + 1;
-  // Begge har allerede trykket «Klar for neste», så neste forsøk armeres
-  // med én gang. De skal ikke måtte bekrefte to ganger.
-  match.phase = "armed";
-  match.leftReady = false;
-  match.rightReady = false;
-  match.waitMs = randomReactionWaitMs(match.waitMs);
-  match.signalAt = Date.now() + match.waitMs;
-  match.leftTapAt = null;
-  match.rightTapAt = null;
-  match.leftReactionMs = null;
-  match.rightReactionMs = null;
-  match.leftEarly = false;
-  match.rightEarly = false;
-  match.resultAt = null;
-  match.lastWinnerId = null;
-  match.lastLoserId = null;
-}
-
-async function finishReactionAttempt(match, playersById, redis) {
-  let winnerSide;
-  if (match.leftEarly !== match.rightEarly) {
-    winnerSide = match.leftEarly ? "right" : "left";
-  } else if (match.leftEarly && match.rightEarly) {
-    // Begge tyvstartet: den som var nærmest det grønne signalet vinner forsøket.
-    const leftGap = Math.abs(Number(match.signalAt) - Number(match.leftTapAt));
-    const rightGap = Math.abs(Number(match.signalAt) - Number(match.rightTapAt));
-    winnerSide = leftGap === rightGap ? (Math.random() < 0.5 ? "left" : "right") : (leftGap < rightGap ? "left" : "right");
-  } else {
-    const l = Number(match.leftReactionMs);
-    const r = Number(match.rightReactionMs);
-    winnerSide = l === r ? (Math.random() < 0.5 ? "left" : "right") : (l < r ? "left" : "right");
-  }
-
-  const loserSide = winnerSide === "left" ? "right" : "left";
-  const winnerId = match[`${winnerSide}Id`];
-  const loserId = match[`${loserSide}Id`];
-  match[`${loserSide}Lives`] = Math.max(0, Number(match[`${loserSide}Lives`] || 0) - 1);
-  match.lastWinnerId = winnerId;
-  match.lastLoserId = loserId;
-  match.resultAt = Date.now();
-  match.phase = "result";
-  match.leftReady = false;
-  match.rightReady = false;
-
-  const loser = playersById.get(loserId);
-  const winner = playersById.get(winnerId);
-  if (loser) {
-    loser.lives = match[`${loserSide}Lives`];
-    if (loser.lives <= 0) {
-      loser.alive = false;
-      loser.valid = false;
-      loser.eliminatedRound = 6;
-      loser.reason = `Du er eliminert fra leken av ${winner?.name || "motstanderen"}.`;
-      loser.failures = [loser.reason];
-      match.finished = true;
-      match.phase = "finished";
-      match.winnerId = winnerId;
-      match.loserId = loserId;
-    }
-    await savePlayer(redis, loser);
-  }
-  if (winner) {
-    winner.lives = match[`${winnerSide}Lives`];
-    winner.alive = true;
-    winner.valid = true;
-    winner.reason = null;
-    winner.failures = [];
-    await savePlayer(redis, winner);
-  }
-}
-
-async function advanceReaction(meta, players, redis) {
-  if (meta.status !== "round_open" || RULES[meta.round - 1]?.id !== "reaction" || !meta.reaction) return { meta, players };
-  const now = Date.now();
-  const reaction = { ...meta.reaction, matches: (meta.reaction.matches || []).map(m => ({ ...m })) };
-  const playersById = new Map(players.map(p => [p.id, p]));
-  let changed = false;
-
-  for (const match of reaction.matches) {
-    if (match.finished) continue;
-    if (match.phase === "armed" && Number(match.signalAt || 0) > 0 && now >= Number(match.signalAt) + 5000) {
-      if (match.leftReactionMs == null && !match.leftEarly) {
-        match.leftTapAt = Number(match.signalAt) + 5000;
-        match.leftReactionMs = 5000;
-      }
-      if (match.rightReactionMs == null && !match.rightEarly) {
-        match.rightTapAt = Number(match.signalAt) + 5000;
-        match.rightReactionMs = 5000;
-      }
-      await finishReactionAttempt(match, playersById, redis);
-      changed = true;
-    }
-  }
-
-  if (reaction.matches.every(m => m.finished)) {
-    const winnerIds = new Set([
-      ...reaction.matches.map(m => m.winnerId).filter(Boolean),
-      ...(reaction.byes || []).map(b => b.id)
-    ]);
-    const winners = players.filter(p => winnerIds.has(p.id));
-    meta = await setMeta(redis, {
-      ...meta,
-      reaction,
-      status: "game_over",
-      deadline: null,
-      winners: winners.map(p => p.name),
-      winnerLength: null
-    });
-    return { meta, players };
-  }
-  if (changed) meta = await setMeta(redis, { ...meta, reaction });
-  return { meta, players };
-}
-
-async function withReactionLock(redis, fn) {
-  const token = createToken();
-  const deadline = Date.now() + 2200;
-  while (Date.now() < deadline) {
-    const acquired = await redis.set(REACTION_LOCK_KEY, token, { nx: true, px: 2500 });
-    if (acquired) {
-      try { return await fn(); }
-      finally {
-        const current = await redis.get(REACTION_LOCK_KEY);
-        if (current === token) await redis.del(REACTION_LOCK_KEY);
-      }
-    }
-    await new Promise(resolve => setTimeout(resolve, 35));
-  }
-  fail("Reaksjonsduellen er opptatt et øyeblikk. Prøv igjen.", 409);
-}
-
 export default async function handler(req, res) {
   try {
     const redis = getRedis();
     if (req.method === "GET") {
-      let [meta, players] = await Promise.all([getMeta(redis), getPlayers(redis)]);
-      ({ meta, players } = await advanceReaction(meta, players, redis));
+      const [meta, players] = await Promise.all([getMeta(redis), getPlayers(redis)]);
       return send(res, 200, publicState(meta, players));
     }
     if (req.method !== "POST") return send(res, 405, { error: "Method not allowed" });
@@ -489,94 +278,6 @@ export default async function handler(req, res) {
       return send(res, 200, { ok: true });
     }
 
-
-    if (body.action === "reaction_ready") {
-      return await withReactionLock(redis, async () => {
-        meta = await getMeta(redis);
-        let players = await getPlayers(redis);
-        ({ meta, players } = await advanceReaction(meta, players, redis));
-        if (meta.status !== "round_open" || RULES[meta.round - 1]?.id !== "reaction" || !meta.reaction) fail("Reaksjonsrunden er ikke aktiv.", 409);
-        const p = await getPlayer(redis, body.playerId);
-        if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
-        if (!p.alive) fail("Du er allerede eliminert.", 409);
-        const reaction = { ...meta.reaction, matches: meta.reaction.matches.map(m => ({ ...m })) };
-        const match = reactionMatchFor(reaction, p.id);
-        if (!match) return send(res, 200, { ok: true, state: publicState(meta, players) });
-        if (match.finished) return send(res, 200, { ok: true, state: publicState(meta, players) });
-        const side = reactionSide(match, p.id);
-        if (match.phase === "result") {
-          match[`${side}Ready`] = true;
-          if (match.leftReady && match.rightReady) resetReactionAttempt(match);
-        } else if (match.phase === "ready") {
-          match[`${side}Ready`] = true;
-          if (match.leftReady && match.rightReady) {
-            match.phase = "armed";
-            match.waitMs = randomReactionWaitMs(match.waitMs);
-            match.signalAt = Date.now() + match.waitMs;
-            match.leftTapAt = null;
-            match.rightTapAt = null;
-            match.leftReactionMs = null;
-            match.rightReactionMs = null;
-            match.leftEarly = false;
-            match.rightEarly = false;
-          }
-        }
-        meta = await setMeta(redis, { ...meta, reaction });
-        players = await getPlayers(redis);
-        return send(res, 200, { ok: true, state: publicState(meta, players) });
-      });
-    }
-
-    if (body.action === "reaction_tap") {
-      return await withReactionLock(redis, async () => {
-        meta = await getMeta(redis);
-        let players = await getPlayers(redis);
-        ({ meta, players } = await advanceReaction(meta, players, redis));
-        if (meta.status !== "round_open" || RULES[meta.round - 1]?.id !== "reaction" || !meta.reaction) fail("Reaksjonsrunden er ikke aktiv.", 409);
-        const p = await getPlayer(redis, body.playerId);
-        if (!p || p.token !== body.token) fail("Ugyldig spiller.", 401);
-        if (!p.alive) fail("Du er allerede eliminert.", 409);
-        const reaction = { ...meta.reaction, matches: meta.reaction.matches.map(m => ({ ...m })) };
-        const match = reactionMatchFor(reaction, p.id);
-        if (!match || match.finished) fail("Du har ingen aktiv reaksjonsduell.", 409);
-        if (match.phase !== "armed" || !match.signalAt) fail("Begge må være klare før du kan trykke.", 409);
-        const side = reactionSide(match, p.id);
-        if (match[`${side}TapAt`] != null) return send(res, 200, { ok: true, state: publicState(meta, players) });
-        const now = Date.now();
-        const clientDelta = Number(body.reactionMs);
-        const useClientTiming = Number.isFinite(clientDelta) && clientDelta >= -7000 && clientDelta <= 5000;
-        if (useClientTiming) {
-          // The phone measures from the instant its own screen actually turns green.
-          // This keeps post-tap network latency out of the reaction score.
-          const roundedDelta = Math.round(clientDelta);
-          match[`${side}TapAt`] = Number(match.signalAt) + roundedDelta;
-          match[`${side}Early`] = roundedDelta < 0;
-          match[`${side}ReactionMs`] = roundedDelta < 0 ? null : roundedDelta;
-        } else {
-          // Backwards-compatible fallback for an old/stale client.
-          match[`${side}TapAt`] = now;
-          if (now < Number(match.signalAt)) {
-            match[`${side}Early`] = true;
-            match[`${side}ReactionMs`] = null;
-          } else {
-            match[`${side}ReactionMs`] = Math.max(0, now - Number(match.signalAt));
-          }
-        }
-        const leftDone = match.leftTapAt != null;
-        const rightDone = match.rightTapAt != null;
-        if (leftDone && rightDone) {
-          const byId = new Map(players.map(x => [x.id, x]));
-          await finishReactionAttempt(match, byId, redis);
-        }
-        meta = await setMeta(redis, { ...meta, reaction });
-        players = await getPlayers(redis);
-        if (reaction.matches.every(m => m.finished)) {
-          ({ meta, players } = await advanceReaction(meta, players, redis));
-        }
-        return send(res, 200, { ok: true, state: publicState(meta, players) });
-      });
-    }
-
     if (["start_round","close_round","reset"].includes(body.action)) assertHostKey(hostKey(req, body));
 
     if (body.action === "reset") {
@@ -604,18 +305,15 @@ export default async function handler(req, res) {
       if (RULES[nextRound - 1]?.id === "firstWins") await redis.del(WINNER_KEY);
       const seconds = clampSeconds(body.roundSeconds ?? meta.roundSeconds);
       const roundStartsAt = Date.now() + 2000;
-      const reactionRound = RULES[nextRound - 1]?.id === "reaction";
-      const reaction = reactionRound ? createReactionState(alive) : null;
       meta = await setMeta(redis, {
         ...meta, status: "round_open", round: nextRound, roundSeconds: seconds,
-        roundStartsAt, deadline: reactionRound ? null : Date.now() + (seconds + 4)*1000, winners: [], winnerLength: null, lastRound: null, reaction
+        roundStartsAt, deadline: Date.now() + (seconds + 4)*1000, winners: [], winnerLength: null, lastRound: null
       });
       return send(res, 200, { ok: true, meta });
     }
 
     if (body.action === "close_round") {
       if (meta.status !== "round_open") fail("Runden er ikke åpen.", 409);
-      if (RULES[meta.round - 1]?.id === "reaction") fail("Reaksjonsrunden avsluttes automatisk når alle duellene er ferdige.", 409);
       const players = await getPlayers(redis);
       const starters = players.filter(p => p.alive).map(p => ({...p}));
       const active = players.filter(p => p.alive);

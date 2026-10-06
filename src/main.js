@@ -33,7 +33,7 @@ localStorage.removeItem("pbrPracticeLastPasswordV10");
 localStorage.removeItem("pbrPracticeCopiedPasswordV10");
 localStorage.removeItem("pbrPracticeLastPasswordV11");
 localStorage.removeItem("pbrPracticeCopiedPasswordV11");
-document.documentElement.dataset.practiceBuild = "v22-reaction-sync";
+document.documentElement.dataset.practiceBuild = "v12";
 
 const SESSION_STORAGE_KEY = "pbrPracticeSessionId";
 
@@ -105,7 +105,6 @@ function statusText(s) {
 }
 
 async function api(body = null) {
-  const requestStartedAt = Date.now();
   const res = await fetch("/api/game", body ? {
     method: "POST",
     cache: "no-store",
@@ -117,9 +116,8 @@ async function api(body = null) {
   } : { cache: "no-store" });
 
   const data = await res.json().catch(() => ({}));
-  const requestEndedAt = Date.now();
   if (!res.ok) throw new Error(data.error || `Feil (${res.status})`);
-  return stripAndSyncServerTime(data, requestStartedAt, requestEndedAt);
+  return data;
 }
 
 function me() {
@@ -518,7 +516,6 @@ async function refresh() {
     armResultOverlay(previousStatus, nextState);
     armRoundIntro(previousStatus, previousRound, nextState);
     state = nextState;
-    armReactionIntro(nextState);
     error = "";
 
     // Don't rebuild the page every two seconds when nothing changed.
@@ -534,227 +531,6 @@ async function refresh() {
   }
 }
 
-
-let reactionIntroKey = "";
-let reactionIntroUntil = 0;
-let serverClockOffsetMs = 0;
-let bestClockRttMs = Infinity;
-let reactionSignalKey = "";
-let reactionSignalShownPerf = null;
-
-function syncServerClock(serverNow, requestStartedAt, requestEndedAt) {
-  const server = Number(serverNow);
-  if (!Number.isFinite(server)) return;
-  const rtt = Math.max(0, Number(requestEndedAt) - Number(requestStartedAt));
-  const midpoint = (Number(requestStartedAt) + Number(requestEndedAt)) / 2;
-  const offset = server - midpoint;
-  // Prefer the cleanest (lowest-RTT) samples; mildly smooth near-best samples.
-  if (!Number.isFinite(bestClockRttMs) || rtt <= bestClockRttMs) {
-    bestClockRttMs = rtt;
-    serverClockOffsetMs = offset;
-  } else if (rtt <= bestClockRttMs + 40) {
-    serverClockOffsetMs = serverClockOffsetMs * 0.8 + offset * 0.2;
-  }
-}
-
-function serverNowMs() {
-  return Date.now() + serverClockOffsetMs;
-}
-
-function stripAndSyncServerTime(payload, startedAt, endedAt) {
-  if (!payload || typeof payload !== "object") return payload;
-  if (Number.isFinite(Number(payload.serverNow))) {
-    syncServerClock(payload.serverNow, startedAt, endedAt);
-    delete payload.serverNow;
-  }
-  if (payload.state && typeof payload.state === "object" && Number.isFinite(Number(payload.state.serverNow))) {
-    syncServerClock(payload.state.serverNow, startedAt, endedAt);
-    delete payload.state.serverNow;
-  }
-  return payload;
-}
-
-function isReactionRound(nextState = state) {
-  return nextState?.meta?.status === "round_open" && nextState?.rules?.[nextState.rules.length - 1]?.id === "reaction";
-}
-
-function reactionMatchFor(playerId, nextState = state) {
-  return (nextState?.meta?.reaction?.matches || []).find(m => m.leftId === playerId || m.rightId === playerId) || null;
-}
-
-function reactionByeFor(playerId, nextState = state) {
-  return (nextState?.meta?.reaction?.byes || []).find(b => b.id === playerId) || null;
-}
-
-function reactionOpponent(match, playerId) {
-  if (!match) return null;
-  if (match.leftId === playerId) return { id: match.rightId, name: match.rightName, emoji: match.rightEmoji };
-  if (match.rightId === playerId) return { id: match.leftId, name: match.leftName, emoji: match.leftEmoji };
-  return null;
-}
-
-function reactionSide(match, playerId) {
-  if (!match) return null;
-  if (match.leftId === playerId) return "left";
-  if (match.rightId === playerId) return "right";
-  return null;
-}
-
-function reactionHearts(lives) {
-  const n = Math.max(0, Math.min(2, Number(lives || 0)));
-  return "❤️".repeat(n) + "🖤".repeat(2 - n);
-}
-
-function armReactionIntro(nextState = state) {
-  if (hostMode || !player?.id || !isReactionRound(nextState)) return;
-  const match = reactionMatchFor(player.id, nextState);
-  if (!match) return;
-  const key = `${nextState?.meta?.sessionId || "session"}:${match.id}`;
-  if (key === reactionIntroKey) return;
-  reactionIntroKey = key;
-  reactionIntroUntil = Date.now() + 3000;
-  setTimeout(() => {
-    if (reactionIntroKey === key && Date.now() >= reactionIntroUntil) render();
-  }, 3050);
-}
-
-function reactionIntroHtml() {
-  if (hostMode || Date.now() >= reactionIntroUntil || !player?.id) return "";
-  const match = reactionMatchFor(player.id);
-  const opponent = reactionOpponent(match, player.id);
-  if (!match || !opponent) return "";
-  return `<div class="reaction-opponent-overlay" role="status" aria-live="assertive">
-    <div class="reaction-opponent-label">DIN MOTSTANDER DENNE RUNDEN ER</div>
-    <div class="reaction-opponent-name">${esc(opponent.name)} <span>${esc(opponent.emoji || "⚡")}</span></div>
-  </div>`;
-}
-
-function formatReactionMs(value, early = false) {
-  if (early) return "FOR TIDLIG";
-  const n = Number(value);
-  return Number.isFinite(n) ? `${Math.round(n)} ms` : "—";
-}
-
-function reactionViewHtml(self) {
-  const bye = reactionByeFor(self.id);
-  if (bye) {
-    return `<section class="card winner reaction-bye-card">
-      <h2>🎟️ Frirunde</h2>
-      <p>Det var oddetall spillere, og du ble tilfeldig trukket til frirunde. Du er videre fra reaksjonstesten.</p>
-      ${lifeHtml(self)}
-    </section>`;
-  }
-
-  const match = reactionMatchFor(self.id);
-  if (!match) return `<section class="card"><h2>⚡ Reaksjonsduell</h2><p>Venter på motstander…</p></section>`;
-  const side = reactionSide(match, self.id);
-  const otherSide = side === "left" ? "right" : "left";
-  const opponent = reactionOpponent(match, self.id);
-  const myLives = Number(match[`${side}Lives`] || 0);
-  const oppLives = Number(match[`${otherSide}Lives`] || 0);
-  const myReady = Boolean(match[`${side}Ready`]);
-  const oppReady = Boolean(match[`${otherSide}Ready`]);
-  const myReaction = match[`${side}ReactionMs`];
-  const oppReaction = match[`${otherSide}ReactionMs`];
-  const myEarly = Boolean(match[`${side}Early`]);
-  const oppEarly = Boolean(match[`${otherSide}Early`]);
-
-  if (match.finished) {
-    if (match.winnerId === self.id) {
-      return `<section class="card winner final-result-card reaction-finished-card">
-        <h2>🏆 DU VANT DUELLEN</h2>
-        <p>Du eliminerte <strong>${esc(opponent?.name || "motstanderen")}</strong> og er videre.</p>
-        <div class="reaction-final-hearts">${reactionHearts(myLives)}</div>
-      </section>`;
-    }
-    return `<section class="card danger final-result-card reaction-finished-card">
-      <h2>💔 DU ER ELIMINERT</h2>
-      <p>Du er eliminert fra leken av <strong>${esc(opponent?.name || "motstanderen")} ${esc(opponent?.emoji || "")}</strong>.</p>
-    </section>`;
-  }
-
-  if (match.phase === "ready") {
-    return `<section class="card accent reaction-card">
-      <div class="reaction-versus">
-        <div><small>Deg</small><strong>${esc(self.name)}</strong><span>${reactionHearts(myLives)}</span></div>
-        <b>VS</b>
-        <div><small>Motstander</small><strong>${esc(opponent?.name || "—")} ${esc(opponent?.emoji || "")}</strong><span>${reactionHearts(oppLives)}</span></div>
-      </div>
-      <div class="reaction-rules-short">
-        <strong>Når skjermen blir grønn: trykk så raskt du kan.</strong>
-        <span>Ikke trykk før. Taperen av hvert forsøk mister ett liv.</span>
-      </div>
-      <button id="reaction-ready" type="button" ${myReady ? "disabled" : ""}>${myReady ? "Du er klar ✓" : (Number(match.attempt || 1) > 1 ? "Klar for neste" : "Jeg er klar")}</button>
-      <p class="reaction-ready-status">${myReady ? (oppReady ? "Begge er klare…" : `Venter på ${esc(opponent?.name || "motstanderen")}…`) : (oppReady ? `${esc(opponent?.name || "Motstanderen")} er klar.` : "Begge må trykke klar før forsøket starter.")}</p>
-    </section>`;
-  }
-
-  if (match.phase === "armed") {
-    const green = Number(match.signalAt || 0) > 0 && serverNowMs() >= Number(match.signalAt);
-    const alreadyTapped = match[`${side}TapAt`] != null;
-    return `<section class="card accent reaction-card reaction-live-card">
-      <div class="reaction-versus compact">
-        <div><strong>${esc(self.name)}</strong><span>${reactionHearts(myLives)}</span></div>
-        <b>VS</b>
-        <div><strong>${esc(opponent?.name || "—")}</strong><span>${reactionHearts(oppLives)}</span></div>
-      </div>
-      <button id="reaction-pad" class="reaction-pad ${alreadyTapped ? "registered" : (green ? "go" : "wait")}" type="button" ${alreadyTapped ? "disabled" : ""}>
-        <span>${alreadyTapped ? "REGISTRERT" : (green ? "TRYKK!" : "GJØR DEG KLAR…")}</span>
-      </button>
-      <p class="reaction-live-note">${alreadyTapped ? `Venter på ${esc(opponent?.name || "motstanderen")}…` : "Vent på grønt signal."}</p>
-    </section>`;
-  }
-
-  if (match.phase === "result") {
-    const iWon = match.lastWinnerId === self.id;
-    return `<section class="card ${iWon ? "winner" : "danger"} reaction-card reaction-result-card">
-      <h2>${iWon ? "⚡ Du vant forsøket!" : "💔 Du tapte forsøket"}</h2>
-      <div class="reaction-times">
-        <div><small>Din reaksjonstid</small><strong>${formatReactionMs(myReaction, myEarly)}</strong></div>
-        <div><small>${esc(opponent?.name || "Motstander")}</small><strong>${formatReactionMs(oppReaction, oppEarly)}</strong></div>
-      </div>
-      <div class="reaction-score"><span>${esc(self.name)} ${reactionHearts(myLives)}</span><b>VS</b><span>${reactionHearts(oppLives)} ${esc(opponent?.name || "")}</span></div>
-      <p>${iWon ? `${esc(opponent?.name || "Motstanderen")} mistet ett liv.` : "Du mistet ett liv."}</p>
-      <button id="reaction-ready" type="button" ${myReady ? "disabled" : ""}>${myReady ? "Klar ✓" : "Klar for neste"}</button>
-      <p class="reaction-ready-status">${myReady ? `Venter på ${esc(opponent?.name || "motstanderen")}…` : "Neste forsøk starter først når begge er klare."}</p>
-    </section>`;
-  }
-
-  return `<section class="card"><h2>⚡ Reaksjonsduell</h2><p>Synkroniserer kampen…</p></section>`;
-}
-
-function reactionHostHtml() {
-  const reaction = state?.meta?.reaction;
-  if (!reaction) return "";
-  const matches = (reaction.matches || []).map(m => {
-    const stateText = m.finished ? "FERDIG" : (m.phase === "armed" ? "REAKSJON" : (m.phase === "result" ? "RESULTAT" : "KLAR"));
-    return `<div class="reaction-host-match"><span>${esc(m.leftName)} ${reactionHearts(m.leftLives)}</span><b>${stateText}</b><span>${reactionHearts(m.rightLives)} ${esc(m.rightName)}</span></div>`;
-  }).join("");
-  const byes = (reaction.byes || []).map(b => `<div class="reaction-host-bye">🎟️ ${esc(b.name)} har frirunde</div>`).join("");
-  return `<div class="reaction-host-panel"><strong>⚡ Reaksjonsdueller</strong>${matches}${byes}</div>`;
-}
-
-function updateReactionPad() {
-  if (!isReactionRound() || !player?.id) return;
-  const match = reactionMatchFor(player.id);
-  const pad = document.querySelector("#reaction-pad");
-  if (!(pad instanceof HTMLElement) || !match || match.phase !== "armed") return;
-  const side = reactionSide(match, player.id);
-  const attemptKey = `${match.id}:${match.attempt || 1}`;
-  if (attemptKey !== reactionSignalKey) {
-    reactionSignalKey = attemptKey;
-    reactionSignalShownPerf = null;
-  }
-  if (match[`${side}TapAt`] != null) return;
-  const go = Number(match.signalAt || 0) > 0 && serverNowMs() >= Number(match.signalAt);
-  const wasGo = pad.classList.contains("go");
-  pad.classList.toggle("go", go);
-  pad.classList.toggle("wait", !go);
-  if (go && !wasGo && reactionSignalShownPerf == null) reactionSignalShownPerf = performance.now();
-  const label = pad.querySelector("span");
-  if (label) label.textContent = go ? "TRYKK!" : "GJØR DEG KLAR…";
-}
-
 function rulesHtml() {
   if (!state?.rules?.length) {
     return `<p class="muted">Reglene kommer når hosten starter prøverunden.</p>`;
@@ -762,11 +538,6 @@ function rulesHtml() {
   const latestIndex = state.rules.length - 1;
   const oldRules = state.rules.slice(0, latestIndex);
   const latest = state.rules[latestIndex];
-  if (latest?.id === "reaction") {
-    return `<div class="rules-summary"><strong>Reaksjonsduell</strong><span>Passordreglene er satt på pause i denne testrunden.</span></div>
-      <div class="rules-section-label new-rule-label">NY REGEL</div>
-      <ol class="rules active-rules-list latest-only"><li class="latest-rule"><span>${latestIndex + 1}</span><div>${esc(latest.text)}</div></li></ol>`;
-  }
   return `<div class="rules-summary"><strong>${state.rules.length} regel${state.rules.length === 1 ? "" : "er"} gjelder i denne runden</strong><span>Alle tidligere regler gjelder fortsatt.</span></div>
     ${oldRules.length ? `<div class="rules-section-label old-rules-label">Regler du fortsatt må følge</div><ol class="rules active-rules-list old-rules-list">${oldRules.map((r, i) => `<li><span>${i + 1}</span><div>${esc(r.text)}</div></li>`).join("")}</ol>` : ""}
     <div class="rules-section-label new-rule-label">NY REGEL</div>
@@ -817,11 +588,6 @@ function practiceFailuresHtml(failures) {
 
 function playerStatusText(p) {
   if (!p.alive) return `Ute${p.eliminatedRound ? ` · runde ${p.eliminatedRound}` : ""}`;
-  if (isReactionRound()) {
-    if (reactionByeFor(p.id)) return "Frirunde";
-    const match = reactionMatchFor(p.id);
-    return match?.finished ? "Duell ferdig" : "Reaksjonsduell";
-  }
   if (state?.meta?.status === "round_open") return p.hasSubmitted ? "Levert" : "Venter";
   if (state?.meta?.status === "results") return "Videre";
   if (state?.meta?.status === "game_over") return "Finalist";
@@ -918,14 +684,6 @@ function playerView() {
     </section>`;
   }
 
-  if (isReactionRound() && self.alive) {
-    return reactionViewHtml(self);
-  }
-
-  if (isReactionRound() && !self.alive) {
-    return reactionViewHtml(self);
-  }
-
   if (state.meta.status === "round_open" && self.alive) {
     const starter = copiedPassword || lastOwnPassword || "";
     const walterDone = state.meta.round !== 7 || walterSteps() >= 25;
@@ -988,21 +746,6 @@ function playerView() {
       ? `<div class="short-king-final"><span>⭐</span><div><small>THE SHORT KING${shortKing.winners.length > 1 ? "S" : ""}</small><strong>${esc(shortKing.winners.map(p => p.name).join(" & "))}</strong><p>${shortKing.maxStars} stjerne${shortKing.maxStars === 1 ? "" : "r"}</p></div></div>`
       : "";
 
-    if (state?.rules?.[state.rules.length - 1]?.id === "reaction") {
-      const match = reactionMatchFor(self.id);
-      const bye = reactionByeFor(self.id);
-      const opponent = reactionOpponent(match, self.id);
-      if (bye && won) {
-        return `<section class="card winner final-result-card"><h2>🎟️ Frirunde</h2><p>Du ble tilfeldig trukket til frirunde og gikk videre fra reaksjonstesten.</p>${shortKingText}</section>`;
-      }
-      if (match?.winnerId === self.id) {
-        return `<section class="card winner final-result-card"><h2>🏆 DU VANT DUELLEN</h2><p>Du eliminerte <strong>${esc(opponent?.name || "motstanderen")}</strong> og gikk videre fra reaksjonstesten.</p>${shortKingText}</section>`;
-      }
-      if (match?.loserId === self.id) {
-        return `<section class="card danger final-result-card"><h2>💔 DU ER ELIMINERT</h2><p>Du er eliminert fra leken av <strong>${esc(opponent?.name || "motstanderen")} ${esc(opponent?.emoji || "")}</strong>.</p>${shortKingText}</section>`;
-      }
-    }
-
     if (won) {
       return `<section class="card winner final-result-card">
         <h2>🏆 Du vant!</h2>
@@ -1049,13 +792,12 @@ function hostView() {
   return `<section class="card host host-card">
     <div class="eyebrow">HOST CONTROLS</div>
     <h2 style="margin:.35rem 0 14px;">Prøverunden</h2>
-    ${state.meta.status === "round_open" && !isReactionRound() ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
-    ${isReactionRound() ? reactionHostHtml() : ""}
-    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `${round + 1 < state.totalRules ? `<label>Rundetid for runde ${Math.min(round + 1, state.totalRules)} (sekunder)
+    ${state.meta.status === "round_open" ? `<div class="host-ready-indicator"><strong>${state.players.filter(p => p.alive && p.hasSubmitted).length}/${alive}</strong><span>har levert</span></div>` : ""}
+    ${["lobby", "results"].includes(state.meta.status) && round < state.totalRules ? `<label>Rundetid for runde ${Math.min(round + 1, state.totalRules)} (sekunder)
       <input id="round-seconds" type="number" min="10" max="300" value="${state.meta.roundSeconds || 60}">
-    </label>` : `<div class="feedback good"><strong>Neste runde: REAKSJONSDUELL</strong><br>Deltakerne matches tilfeldig og tar med gjenværende liv.</div>`}
-    <div class="actions"><button id="start-round">${round === 0 ? "Start game" : (round + 1 === state.totalRules ? "Start reaksjonsduell" : "Start next round")}</button></div>` : ""}
-    ${state.meta.status === "round_open" && !isReactionRound() ? `<div class="actions"><button id="close-round">Close round now</button></div>` : ""}
+    </label>
+    <div class="actions"><button id="start-round">${round === 0 ? "Start game" : "Start next round"}</button></div>` : ""}
+    ${state.meta.status === "round_open" ? `<div class="actions"><button id="close-round">Close round now</button></div>` : ""}
     <div class="actions"><button id="reset" class="danger-button">Reset entire game</button></div>
     <p class="muted tiny">Player link: <span class="mono">${esc(location.origin + location.pathname)}</span></p>
   </section>`;
@@ -1126,23 +868,6 @@ function render() {
   document.body.dataset.participantPhase = hostMode ? "host" : (participantActiveRound ? "active-round" : "not-active-round");
   document.body.classList.toggle("participant-between-rounds", !hostMode && !participantActiveRound);
 
-  // Reaksjonsduellen rendres som en egen deltakerskjerm, uavhengig av den vanlige
-  // grid/aside-layouten. Dette hindrer mobile CSS-regler fra å skjule eller flytte
-  // duellen og gjør samme DOM tilgjengelig på PC og mobil.
-  if (!hostMode && isReactionRound() && player?.id) {
-    const self = me();
-    app.innerHTML = `<main class="reaction-participant-main">
-      ${error ? `<div class="notice bad">${esc(error)}</div>` : ""}
-      ${reactionIntroHtml()}
-      <div class="reaction-participant-shell">
-        ${self ? reactionViewHtml(self) : `<section class="card"><h2>⚡ Reaksjonsduell</h2><p>Synkroniserer kampen…</p></section>`}
-      </div>
-    </main>`;
-    bind();
-    restoreInputState(inputState);
-    return;
-  }
-
   app.innerHTML = `<main>
     <header>
       <div>
@@ -1161,7 +886,6 @@ function render() {
     ${meta.status === "game_over" && (meta.winners || []).length ? `<div class="hero-winner">🏆 Vinner${meta.winners.length > 1 ? "e" : ""}: ${meta.winners.map(esc).join(", ")}${meta.winnerLength ? ` · ${meta.winnerLength} tegn` : ""}</div>` : ""}
     ${resultOverlayHtml()}
     ${roundStartOverlayHtml()}
-    ${reactionIntroHtml()}
 
     <section class="grid">
       <div>
@@ -1206,67 +930,6 @@ function bind() {
     passwordInput.setAttribute("autocomplete", "off");
   }
   setupParticipantPasswordDisplay();
-
-  document.querySelector("#reaction-ready")?.addEventListener("click", async e => {
-    const button = e.currentTarget;
-    if (button instanceof HTMLButtonElement) { button.disabled = true; button.textContent = "Klar ✓"; }
-    try {
-      const response = await api({ action: "reaction_ready", playerId: player.id, token: player.token });
-      if (response?.state) state = response.state;
-      error = "";
-      render();
-    } catch (x) { error = x.message; render(); }
-  });
-
-  const reactionPad = document.querySelector("#reaction-pad");
-  if (reactionPad) {
-    // If a render happens after signalAt, the button may already be green before
-    // the 25 ms tick runs. Start the local stopwatch at the actual paint/bind point.
-    if (reactionPad.classList.contains("go") && reactionSignalShownPerf == null) {
-      reactionSignalShownPerf = performance.now();
-    }
-    let tapped = false;
-    const tap = async e => {
-      if (tapped) return;
-      tapped = true;
-      e.preventDefault?.();
-      const matchAtTap = reactionMatchFor(player.id);
-      const signalAt = Number(matchAtTap?.signalAt || 0);
-      const isGreenNow = reactionPad.classList.contains("go");
-      let localReactionMs;
-      if (isGreenNow && reactionSignalShownPerf != null) {
-        localReactionMs = Math.max(0, performance.now() - reactionSignalShownPerf);
-      } else {
-        // Negative means a false start. Use synchronized server time so the
-        // server can compare two early taps without adding request latency.
-        localReactionMs = signalAt ? serverNowMs() - signalAt : -7000;
-      }
-      reactionPad.setAttribute("disabled", "");
-      reactionPad.classList.remove("go", "wait");
-      reactionPad.classList.add("registered");
-      const label = reactionPad.querySelector("span");
-      if (label) label.textContent = "REGISTRERT";
-      const liveNote = document.querySelector(".reaction-live-note");
-      const matchNow = reactionMatchFor(player.id);
-      const opponentNow = reactionOpponent(matchNow, player.id);
-      if (liveNote) liveNote.textContent = `Trykket er registrert. Venter på ${opponentNow?.name || "motstanderen"}…`;
-      if (navigator.vibrate) navigator.vibrate(35);
-      try {
-        const response = await api({ action: "reaction_tap", playerId: player.id, token: player.token, reactionMs: Math.round(localReactionMs) });
-        if (response?.state) state = response.state;
-        error = "";
-        render();
-      } catch (x) { tapped = false; error = x.message; render(); }
-    };
-    if (window.PointerEvent) {
-      reactionPad.addEventListener("pointerdown", tap, { passive: false });
-    } else {
-      reactionPad.addEventListener("touchstart", tap, { passive: false });
-      reactionPad.addEventListener("mousedown", tap);
-    }
-    reactionPad.addEventListener("click", tap);
-    reactionPad.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") tap(e); });
-  }
 
   const nicknameInput = document.querySelector("#nickname-input");
   const teamHint = document.querySelector("#team-hint");
@@ -1540,7 +1203,6 @@ function bind() {
 }
 
 function tick() {
-  updateReactionPad();
   const startOverlay = document.querySelector(".round-start-overlay");
   if (startOverlay && !roundIntroActive()) {
     startOverlay.remove();
@@ -1561,29 +1223,6 @@ function tick() {
   }
 }
 
-setInterval(() => { if (!isReactionRound()) refresh(); }, 2000);
-
-function reactionPollDelay() {
-  if (!isReactionRound() || !player?.id) return 1000;
-  const match = reactionMatchFor(player.id);
-  if (!match) return 500;
-  const side = reactionSide(match, player.id);
-  if (match.finished) return 1200;
-  if (match.phase === "ready" || match.phase === "result") return 300;
-  if (match.phase === "armed") {
-    // Once signalAt is known, the phone does not need polling to turn green;
-    // the 25 ms local tick handles that. Poll faster only after our tap while
-    // waiting for the opponent/result.
-    return match[`${side}TapAt`] != null ? 350 : 1400;
-  }
-  return 600;
-}
-
-async function reactionRefreshLoop() {
-  if (isReactionRound()) await refresh();
-  setTimeout(reactionRefreshLoop, reactionPollDelay());
-}
-
-setTimeout(reactionRefreshLoop, 250);
-setInterval(tick, 25);
+setInterval(refresh, 2000);
+setInterval(tick, 250);
 refresh();

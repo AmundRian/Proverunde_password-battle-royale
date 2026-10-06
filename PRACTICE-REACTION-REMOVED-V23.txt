@@ -1,0 +1,10 @@
+V23: Reaksjonsduellen er fjernet fra prøverunden.
+
+Prøverunden er tilbake til den stabile femrundersvarianten:
+1. Land
+2. To store bokstaver + tall
+3. Rubiks kube-farge + dødssynd
+4. Fornavn på norsk statsminister
+5. Maks én A/a
+
+Ingen reaksjonsrunde eller matchmaking er aktiv i prøverunden.
